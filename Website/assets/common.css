@@ -1,0 +1,556 @@
+/* ============================================================
+ *  common.css —— 三页共用的设计令牌、导航、页脚、按钮
+ * ============================================================ */
+
+:root {
+    /* 站点外壳：GitHub 深色系（近黑底 + 中性灰阶，强调色为白） */
+    --bg: #010409;
+    --bg-soft: #0d1117;
+    --bg-card: #0d1117;
+    --bg-card-2: #161b22;
+    --line: #30363d;
+    --line-soft: #21262d;
+
+    --fg: #e6edf3;
+    --fg-dim: #8b949e;
+    --fg-faint: #6e7681;
+
+    --accent: #f0f6fc;          /* 主要强调 = 白 */
+    --accent-hi: #58a6ff;       /* 链接蓝（GitHub 的 accent） */
+    --accent-deep: #21262d;
+    --accent-soft: rgba(177, 186, 196, .12);
+    --gold: #d29922;
+
+    /* ---------- WinForms 模拟控件用色（取自真实 WinForms 默认主题） ---------- */
+    --win-chrome: #f0f0f0;
+    --win-chrome-line: #d0d0d0;
+    --win-client: #f0f0f0;
+    --win-border: #a0a0a0;
+    --win-text: #1a1a1a;
+    --win-dim: #6d6d6d;
+    --win-white: #ffffff;
+    --win-btn-face: #e1e1e1;
+    --win-btn-face-hi: #eaf2fb;
+    --win-btn-border: #adadad;
+    --win-btn-border-hi: #0078d7;
+    --win-row-current: #e8f4ff;
+    --win-row-hover: #f5f8fc;
+    --win-green: #008040;
+    --win-orange: #b45000;
+
+    /* 客户端模拟（战网登录窗口） */
+    --bn-bg: #0d1b2a;
+    --bn-bg-2: #12263a;
+    --bn-panel: #0a1622;
+    --bn-line: #1d3548;
+    --bn-text: #dfe9f2;
+    --bn-dim: #8ba3b8;
+    --bn-accent: #00a4ff;
+
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 18px 50px rgba(0, 0, 0, .45);
+    --mono: "Cascadia Mono", "JetBrains Mono", Consolas, "Courier New", monospace;
+    --sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system,
+        BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    --win-font: "Segoe UI", "Microsoft YaHei UI", Tahoma, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+}
+
+/**
+ * 根元素永远预留滚动条的位置（左右对称各留一份）。
+ *
+ * 原因有两个：
+ *  1) 三个页面内容高度不同（首页很长、UI/CLI 模拟页通常一屏放得下）。
+ *     不预留的话，"有滚动条的页面"会比"没滚动条的页面"少 15px 可用宽度，
+ *     居中的 .nav-inner 就会跟着偏移，顶部导航里的图标与标题左右错开。
+ *  2) 两侧都留，内容始终在视口正中，滚动条出现/消失时不会横向跳动。
+ *
+ * 注意：只用 scrollbar-gutter，不要给 html 加 overflow-y:auto 之类的显式声明
+ *（那个会在"内容只比视口高一点点"时把滚动位置钉死在顶部）。
+ */
+html {
+    scrollbar-gutter: stable both-edges;
+}
+
+body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 背景微光 */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(900px 460px at 12% -10%, rgba(88, 166, 255, .07), transparent 70%),
+        radial-gradient(1100px 780px at 40% 12%, rgba(139, 148, 158, .07), transparent 72%);
+    z-index: 0;
+}
+
+a { color: var(--accent-hi); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, kbd, pre { font-family: var(--mono); }
+
+/* ============================================================
+ *  导航
+ * ============================================================ */
+.nav {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    background: rgba(10, 16, 23, .86);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line-soft);
+}
+
+.nav-inner {
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 10px 22px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 650;
+    color: var(--fg);
+    letter-spacing: .2px;
+    white-space: nowrap;
+}
+.brand:hover { text-decoration: none; }
+
+.brand-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    display: block;
+    flex: none;
+    object-fit: contain;
+}
+
+.brand-sub {
+    font-size: 11px;
+    color: var(--fg-faint);
+    font-weight: 500;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+
+.nav-links a {
+    color: var(--fg-dim);
+    padding: 7px 13px;
+    border-radius: 999px;
+    font-size: 14px;
+    transition: background .15s, color .15s;
+}
+.nav-links a:hover {
+    background: rgba(255, 255, 255, .06);
+    color: var(--fg);
+    text-decoration: none;
+}
+.nav-links a.active {
+    background: var(--accent-soft);
+    color: var(--fg);
+    box-shadow: inset 0 0 0 1px var(--line);
+}
+.nav-links a.gh {
+    border: 1px solid var(--line);
+}
+
+/* ============================================================
+ *  布局
+ * ============================================================ */
+main { position: relative; z-index: 1; flex: 1; }
+
+.wrap {
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 0 22px;
+}
+
+/* 所有内容区块统一带上分隔线，别在 HTML 里零散地写内联 border-top */
+section {
+    padding: 58px 0;
+    border-top: 1px solid var(--line-soft);
+}
+section.tight { padding: 34px 0; }
+
+.sec-head { margin-bottom: 26px; }
+
+.sec-kicker {
+    color: var(--accent-hi);
+    font-size: 12px;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    font-weight: 650;
+    margin-bottom: 6px;
+}
+
+h1, h2, h3 { line-height: 1.25; margin: 0 0 10px; }
+h1 { font-size: 40px; letter-spacing: -.4px; }
+h2 { font-size: 27px; letter-spacing: -.2px; }
+h3 { font-size: 17px; }
+
+.lead { color: var(--fg-dim); font-size: 17px; max-width: 760px; }
+.muted { color: var(--fg-dim); }
+.faint { color: var(--fg-faint); }
+.small { font-size: 13px; }
+.center { text-align: center; }
+
+/* ============================================================
+ *  Hero
+ * ============================================================ */
+.hero {
+    padding: 72px 0 46px;
+    border-bottom: 1px solid var(--line-soft);
+}
+
+.hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+    gap: 48px;
+    align-items: center;
+}
+
+.badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 24px; }
+
+.badge {
+    font-size: 12px;
+    color: var(--fg-dim);
+    border: 1px solid var(--line);
+    background: var(--bg-card);
+    padding: 4px 11px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.badge b { color: var(--fg); font-weight: 600; }
+
+.cta-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 20px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .12s, box-shadow .15s, background .15s, border-color .15s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+.btn-primary {
+    background: #238636;
+    color: #fff;
+    border-color: rgba(240, 246, 252, .1);
+    box-shadow: none;
+}
+.btn-primary:hover { background: #2ea043; box-shadow: 0 6px 18px rgba(35, 134, 54, .3); }
+
+.btn-ghost {
+    background: var(--bg-card);
+    color: var(--fg);
+    border-color: var(--line);
+}
+.btn-ghost:hover { border-color: #8b949e; background: var(--bg-card-2); }
+
+.btn-sm { padding: 7px 14px; font-size: 13.5px; }
+
+/* Hero 右侧的窗口缩略插画 */
+.hero-art {
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: linear-gradient(170deg, var(--bg-card-2), var(--bg-soft));
+    padding: 18px;
+    box-shadow: var(--shadow);
+}
+.hero-art .art-bar {
+    height: 9px;
+    border-radius: 5px;
+    background: #24384a;
+    margin-bottom: 9px;
+}
+.hero-art .art-bar.w70 { width: 70%; }
+.hero-art .art-bar.w45 { width: 45%; }
+.hero-art .art-bar.w88 { width: 88%; }
+.hero-art .art-row {
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    margin-top: 12px;
+}
+.hero-art .art-chip {
+    height: 34px;
+    border-radius: 8px;
+    background: #1b2c3c;
+    flex: 1;
+    border: 1px solid #24384a;
+}
+.hero-art .art-chip.on { background: rgba(88, 166, 255, .16); border-color: rgba(88, 166, 255, .45); }
+
+/* ============================================================
+ *  卡片 / 栅格
+ * ============================================================ */
+.grid { display: grid; gap: 18px; }
+.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+}
+.card h3 { display: flex; align-items: center; gap: 9px; }
+.card p { color: var(--fg-dim); margin: 8px 0 0; }
+.card .ico {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--fg);
+    display: grid;
+    place-items: center;
+    font-size: 15px;
+    flex: none;
+}
+
+ul.ticks { list-style: none; margin: 10px 0 0; padding: 0; }
+ul.ticks li {
+    color: var(--fg-dim);
+    padding-left: 22px;
+    position: relative;
+    margin-bottom: 5px;
+}
+ul.ticks li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--accent-hi);
+    font-weight: 700;
+}
+ul.ticks li b { color: var(--fg); font-weight: 600; }
+
+/* ============================================================
+ *  表格 / 代码块
+ * ============================================================ */
+table.tbl {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    font-size: 14px;
+}
+table.tbl th, table.tbl td {
+    text-align: left;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+}
+/* 窄屏时表格不能把页面撑宽 */
+table.tbl th, table.tbl td { word-break: break-word; overflow-wrap: anywhere; }
+table.tbl code { word-break: break-all; }
+table.tbl th {
+    background: var(--bg-card-2);
+    color: var(--fg-dim);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: .3px;
+}
+table.tbl tr:last-child td { border-bottom: none; }
+table.tbl td code { color: #a5d6ff; }
+
+pre.code {
+    background: #0d1117;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.75;
+    color: #cfe3f5;
+    margin: 0;
+}
+pre.code .c { color: #6d8090; }
+pre.code .k { color: #79c0ff; }
+pre.code .s { color: #a5d6ff; }
+
+/* ============================================================
+ *  页脚
+ * ============================================================ */
+footer {
+    position: relative;
+    z-index: 1;
+    border-top: 1px solid var(--line-soft);
+    background: rgba(8, 13, 19, .7);
+    padding: 30px 0;
+    margin-top: 40px;
+}
+.foot-grid {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--fg-faint);
+    font-size: 13px;
+}
+.foot-links { display: flex; gap: 16px; flex-wrap: wrap; }
+.disclaimer {
+    margin-top: 12px;
+    color: var(--fg-faint);
+    font-size: 12.5px;
+    max-width: 780px;
+}
+
+/* ============================================================
+ *  工具类
+ * ============================================================ */
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.spread { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.hr { height: 1px; background: var(--line-soft); border: 0; margin: 22px 0; }
+.nowrap { white-space: nowrap; }
+.hidden { display: none !important; }
+
+.notice {
+    border: 1px solid var(--line);
+    background: var(--bg-card-2);
+    border-radius: var(--radius);
+    padding: 13px 16px;
+    color: var(--fg-dim);
+    font-size: 14px;
+}
+.notice strong { color: var(--fg); }
+.notice.warn {
+    border-color: rgba(210, 153, 34, .4);
+    background: rgba(210, 153, 34, .08);
+    color: #e3b341;
+}
+
+/* 演示页两栏布局：左 = 战网登录页，右 = 工具（UI）/ 终端（CLI） */
+.demo-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 462px) minmax(0, 680px);
+    gap: 26px;
+    align-items: start;
+    justify-content: start;
+}
+
+/* CLI 页：左登录页，右终端自适应 */
+.cli-layout {
+    grid-template-columns: minmax(0, 462px) minmax(0, 1fr);
+    align-items: start;
+}
+
+/* 只在"两栏并排装得下"时并排；装不下才堆叠 */
+@media (max-width: 1310px) {
+    .demo-layout,
+    .cli-layout { grid-template-columns: minmax(0, 1fr); justify-content: stretch; }
+}
+
+/* 等比缩放舞台：让 680×560 的模拟窗口能塞进任意宽度而不失真 */
+.stage {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+}
+.stage > .scaleme {
+    transform: scale(var(--scale, 1));
+    transform-origin: top left;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* 居中的舞台（用于对话框） */
+.stage.center-stage > .scaleme {
+    left: 50%;
+    margin-left: calc(var(--w, 0px) / -2);
+}
+
+.panel-shell {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+
+.panel-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-card-2);
+    font-size: 13px;
+    color: var(--fg-dim);
+}
+.panel-bar .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #2c4457;
+    flex: none;
+}
+.panel-bar .spacer { margin-left: auto; }
+
+.panel-body { padding: 18px; }
+
+/* ============================================================
+ *  响应式
+ * ============================================================ */
+@media (max-width: 1080px) {
+    .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 30px; }
+    .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    h1 { font-size: 34px; }
+}
+
+@media (max-width: 720px) {
+    .grid-2, .grid-3 { grid-template-columns: minmax(0, 1fr); }
+    .wrap { padding: 0 14px; }
+    .nav-inner { padding: 9px 14px; gap: 10px; }
+    .nav-links a { padding: 6px 10px; font-size: 13px; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 23px; }
+    section { padding: 40px 0; }
+    .hero { padding: 46px 0 34px; }
+}

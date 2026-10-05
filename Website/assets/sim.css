@@ -1,0 +1,700 @@
+/* ============================================================
+ *  sim.css —— WinForms 桌面程序模拟
+ *  尺寸、间距、颜色尽量逐项对齐 Forms/*.cs 里的实际取值
+ * ============================================================ */
+
+/* ------------------------------------------------------------
+ *  窗口外壳（对应 MainForm：ClientSize 680×560，浅色 WinForms 主题）
+ * ------------------------------------------------------------ */
+.win {
+    width: 680px;
+    height: 560px;
+    background: var(--win-chrome);
+    border: 1px solid #7a7a7a;
+    border-radius: 7px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    font-family: var(--win-font);
+    font-size: 12px;
+    color: var(--win-text);
+    box-shadow: 0 20px 44px rgba(0, 0, 0, .5);
+    user-select: none;
+}
+
+.win-titlebar {
+    height: 30px;
+    background: linear-gradient(#fdfdfd, #f0f0f0);
+    border-bottom: 1px solid #dcdcdc;
+    display: flex;
+    align-items: center;
+    padding: 0 0 0 9px;
+    flex: none;
+}
+.win-titlebar .ico16 {
+    width: 16px;
+    height: 16px;
+    display: block;
+    margin-right: 7px;
+    flex: none;
+    object-fit: contain;
+}
+.win-titlebar .title {
+    font-size: 12px;
+    color: #1a1a1a;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.win-titlebar .wbtn {
+    width: 45px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    color: #444;
+    margin-left: 0;
+}
+.win-titlebar .wbtn.close:hover { background: #e81123; color: #fff; }
+.win-titlebar .wbtn:hover { background: #e5e5e5; }
+.win-titlebar .spacer { margin-left: auto; }
+
+/* 菜单栏（真实程序没有菜单栏，这里不加，保持还原） */
+
+/* ---- 标签页 ---- */
+.win-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--win-chrome);
+}
+
+.tabs {
+    display: flex;
+    gap: 2px;
+    padding: 5px 5px 0 5px;
+    background: var(--win-chrome);
+    flex: none;
+}
+
+.tab {
+    padding: 5px 15px 6px;
+    border: 1px solid #d0d0d0;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    background: #e6e6e6;
+    color: #333;
+    font-size: 12px;
+    cursor: pointer;
+    position: relative;
+    top: 1px;
+    white-space: nowrap;
+}
+.tab:hover { background: #eef4fb; }
+.tab.active {
+    background: var(--win-client);
+    border-color: #d0d0d0;
+    z-index: 2;
+    font-weight: 600;
+}
+.tab.disabled {
+    color: var(--win-dim);
+    background: #e6e6e6;
+    cursor: not-allowed;
+}
+.tab.disabled:hover { background: #e6e6e6; }
+
+.tab-panels {
+    flex: 1;
+    min-height: 0;
+    border-top: 1px solid #d0d0d0;
+    background: var(--win-client);
+    position: relative;
+}
+.tab-panel {
+    position: absolute;
+    inset: 0;
+    padding: 12px;
+    display: none;
+    flex-direction: column;
+}
+.tab-panel.active { display: flex; }
+/* 禁用态由各控件自己的 disabled 呈现（对齐 WinForms 的 Enabled=false） */
+
+/* ---- 状态栏（StatusStrip） ---- */
+.statusbar {
+    flex: none;
+    height: 24px;
+    background: var(--win-chrome);
+    border-top: 1px solid #d0d0d0;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    font-size: 11.5px;
+    color: var(--win-dim);
+}
+.statusbar .ver { color: var(--win-dim); }
+.statusbar .ver.link { cursor: pointer; }
+.statusbar .ver.link:hover { color: #0067c0; text-decoration: underline; }
+.statusbar .spacer { flex: 1; }
+.statusbar .mode.admin { color: var(--win-green); }
+.statusbar .mode.user { color: var(--win-orange); }
+.statusbar .mode.off { color: var(--win-dim); }
+
+/* ------------------------------------------------------------
+ *  通用 WinForms 控件
+ * ------------------------------------------------------------ */
+.wf-btn {
+    font-family: var(--win-font);
+    font-size: 12px;
+    color: var(--win-text);
+    background: var(--win-btn-face);
+    border: 1px solid var(--win-btn-border);
+    border-radius: 3px;
+    padding: 4px 12px;
+    min-height: 25px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    transition: background .1s, border-color .1s;
+}
+.wf-btn:hover:not(:disabled) {
+    background: var(--win-btn-face-hi);
+    border-color: var(--win-btn-border-hi);
+}
+.wf-btn:active:not(:disabled) { background: #cfe3f7; }
+.wf-btn:disabled {
+    color: #9a9a9a;
+    background: #f4f4f4;
+    border-color: #dcdcdc;
+    cursor: not-allowed;
+}
+.wf-btn.primary { font-weight: 600; }
+
+.wf-input, .wf-select {
+    font-family: var(--win-font);
+    font-size: 12px;
+    color: var(--win-text);
+    background: #fff;
+    border: 1px solid #7a7a7a;
+    border-radius: 2px;
+    padding: 3px 6px;
+    height: 24px;
+    outline: none;
+    width: 100%;
+}
+.wf-input:focus, .wf-select:focus { border-color: #0078d7; }
+.wf-input[readonly] { background: #fff; color: #1a1a1a; }
+.wf-input::placeholder { color: #9a9a9a; }
+
+.wf-select {
+    appearance: none;
+    background-image:
+        linear-gradient(45deg, transparent 50%, #444 50%),
+        linear-gradient(135deg, #444 50%, transparent 50%);
+    background-position: calc(100% - 13px) 10px, calc(100% - 8px) 10px;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 24px;
+    cursor: pointer;
+}
+
+.wf-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--win-text);
+    cursor: pointer;
+    user-select: none;
+}
+.wf-check input {
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    border: 1px solid #7a7a7a;
+    border-radius: 2px;
+    background: #fff;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    flex: none;
+}
+.wf-check input:checked::after {
+    content: "✓";
+    font-size: 10px;
+    line-height: 1;
+    color: #2b2b2b;
+    font-weight: 700;
+}
+.wf-check input:disabled { background: #f0f0f0; border-color: #c8c8c8; }
+
+.wf-label { font-size: 12px; color: var(--win-text); }
+.wf-hint { font-size: 11.5px; color: var(--win-dim); }
+
+.wf-group {
+    border: 1px solid #d0d0d0;
+    border-radius: 3px;
+    padding: 10px 12px;
+    position: relative;
+}
+.wf-group > .wf-group-title {
+    position: absolute;
+    top: -8px;
+    left: 9px;
+    background: var(--win-client);
+    padding: 0 5px;
+    font-size: 12px;
+    color: var(--win-text);
+}
+
+.wf-num {
+    width: 80px;
+    height: 25px;
+    border: 1px solid #7a7a7a;
+    border-radius: 2px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    overflow: hidden;
+}
+.wf-num input {
+    width: 100%;
+    border: none;
+    outline: none;
+    font-family: var(--win-font);
+    font-size: 12px;
+    padding: 0 4px;
+    height: 100%;
+    background: transparent;
+}
+.wf-num .spin {
+    width: 16px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid #d0d0d0;
+    flex: none;
+}
+.wf-num .spin span {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    font-size: 7px;
+    color: #555;
+    cursor: pointer;
+    line-height: 1;
+}
+.wf-num .spin span:hover { background: #e8f1fa; }
+.wf-num .spin span:first-child { border-bottom: 1px solid #d0d0d0; }
+
+/* ------------------------------------------------------------
+ *  ComboBox 展开后的下拉列表
+ *  注意：它挂在 document.body 下，会继承站点外壳的浅色文字，
+ *  必须显式指定 WinForms 的深色文字，否则白字白底完全看不清。
+ * ------------------------------------------------------------ */
+.wf-droplist {
+    position: fixed;
+    z-index: 400;
+    background: var(--win-white);
+    color: var(--win-text);
+    border: 1px solid #7a7a7a;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .28);
+    max-height: 220px;
+    overflow: auto;
+    font-family: var(--win-font);
+    font-size: 12px;
+    user-select: none;
+}
+.wf-dropitem {
+    padding: 5px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    color: var(--win-text);
+}
+.wf-dropitem:hover { background: #e8f1fa; }
+.wf-dropitem.on { background: #cfe8ff; }
+
+/* ------------------------------------------------------------
+ *  账号切换页（AccountPanel）
+ * ------------------------------------------------------------ */
+.ap-region-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 8px;
+    flex: none;
+}
+.ap-region-row .wf-label { margin: 0 6px 0 0; line-height: 24px; }
+.ap-region-row .wf-select { width: 200px; margin: 0 12px 0 0; }
+.ap-region-row .wf-hint { margin: 0; line-height: 24px; white-space: nowrap; }
+
+.account-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: #fff;
+    border: 1px solid #7a7a7a;
+    border-radius: 0;
+}
+.account-list::-webkit-scrollbar { width: 15px; }
+.account-list::-webkit-scrollbar-track { background: #f0f0f0; }
+.account-list::-webkit-scrollbar-thumb { background: #cdcdcd; border: 3px solid #f0f0f0; }
+
+.acct-row {
+    height: 48px;
+    background: #fff;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 64px 84px 36px;
+    align-items: center;
+    padding: 6px 8px 6px 12px;
+    gap: 4px;
+    cursor: pointer;
+    border: none;
+}
+.acct-row.current { background: var(--win-row-current); }
+.acct-row:not(.current):hover { background: var(--win-row-hover); }
+
+.acct-row .email {
+    font-size: 12px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    padding-right: 6px;
+    min-width: 0;
+}
+.acct-row .flag {
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--win-green);
+    visibility: hidden;
+}
+.acct-row.current .flag { visibility: visible; }
+.acct-row .wf-btn { width: 100%; padding: 4px 6px; }
+.acct-row .wf-btn.remove { font-size: 12px; }
+
+.list-empty {
+    height: 100%;
+    display: grid;
+    place-items: center;
+    color: #808080;
+    font-size: 12px;
+    text-align: center;
+    padding: 0 20px;
+}
+
+.ap-status {
+    flex: none;
+    font-size: 12px;
+    color: var(--win-text);
+    margin: 8px 0;
+    min-height: 17px;
+}
+
+.ap-buttons {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.ap-buttons .wf-btn { height: 32px; }
+.ap-buttons .wf-btn.add { width: 120px; }
+.ap-buttons .wf-btn.refresh { width: 120px; margin-right: 4px; }
+.ap-buttons .wf-check { margin-left: 0; }
+
+/* ------------------------------------------------------------
+ *  一键拔线页（NetworkPanel）
+ * ------------------------------------------------------------ */
+.np-top {
+    display: grid;
+    grid-template-columns: 80px minmax(0, 1fr) 100px 100px;
+    gap: 6px;
+    align-items: center;
+    height: 32px;
+    flex: none;
+}
+.np-top .wf-btn { height: 25px; }
+
+.np-group {
+    margin-top: 8px;
+    height: 150px;
+    flex: none;
+    position: relative;
+}
+/* 逐项对齐 NetworkPanel.cs 的手工坐标 */
+.np-mute { position: absolute; left: 15px; top: 25px; }
+.np-sec-label { position: absolute; left: 15px; top: 67px; }
+.np-seconds { position: absolute; left: 130px; top: 62px; }
+.np-pull { position: absolute; left: 230px; top: 62px; width: 130px; height: 25px; }
+.np-countdown {
+    position: absolute;
+    left: 15px;
+    top: 100px;
+    right: 15px;
+    font-size: 12px;
+    color: var(--win-dim);
+}
+.np-countdown.err { color: #c0392b; }
+
+.np-hint { margin-top: 8px; flex: none; }
+
+/* ------------------------------------------------------------
+ *  设置页（SettingsPanel）
+ * ------------------------------------------------------------ */
+.sp-field-label { margin-bottom: 4px; }
+.sp-row {
+    display: grid;
+    gap: 6px;
+    width: 640px;
+    max-width: 100%;
+    height: 32px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.sp-row.exe { grid-template-columns: minmax(0, 1fr) 100px; }
+.sp-row.cfg { grid-template-columns: minmax(0, 1fr) 100px 100px; margin-bottom: 4px; }
+.sp-row.cfg .wf-btn { margin-right: 8px; }
+.sp-row.cfg .wf-btn:last-child { margin-right: 0; }
+.sp-hint { margin-bottom: 16px; }
+.sp-restart-note { color: var(--win-dim); font-size: 11.5px; }
+.sp-btn-row {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.sp-btn-row .wf-btn { width: 120px; height: 32px; }
+.sp-saved { color: var(--win-green); font-size: 12px; }
+
+/* ------------------------------------------------------------
+ *  模态对话框
+ * ------------------------------------------------------------ */
+.modal-layer {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 10, 15, .58);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow: auto;
+    animation: fadeIn .12s ease-out;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.dlg {
+    background: var(--win-chrome);
+    border: 1px solid #7a7a7a;
+    border-radius: 6px;
+    box-shadow: 0 26px 70px rgba(0, 0, 0, .6);
+    font-family: var(--win-font);
+    font-size: 12px;
+    color: var(--win-text);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: pop .14s ease-out;
+}
+@keyframes pop {
+    from { transform: scale(.97); opacity: .6; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.dlg-titlebar {
+    height: 30px;
+    background: linear-gradient(#fdfdfd, #f0f0f0);
+    border-bottom: 1px solid #dcdcdc;
+    display: flex;
+    align-items: center;
+    padding-left: 10px;
+    flex: none;
+    font-size: 12px;
+}
+.dlg-titlebar .wbtn {
+    width: 44px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    margin-left: auto;
+    color: #444;
+    cursor: pointer;
+}
+.dlg-titlebar .wbtn:hover { background: #e81123; color: #fff; }
+.dlg-body { padding: 16px; flex: 1; display: flex; flex-direction: column; }
+.dlg-msg {
+    font-size: 12.5px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 340px;
+    overflow: auto;
+    font-family: var(--win-font);
+}
+.dlg-msg.mono { font-family: var(--mono); font-size: 12px; }
+.dlg-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 18px;
+    flex: none;
+}
+.dlg-buttons .wf-btn { min-width: 88px; height: 30px; }
+.dlg-buttons.center-btns { justify-content: center; }
+
+/* MessageBox 图标 */
+.mb-row { display: flex; gap: 14px; align-items: flex-start; }
+.mb-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    flex: none;
+}
+.mb-icon.info { background: #0078d7; }
+.mb-icon.warn { background: #f2b705; color: #4a3600; }
+.mb-icon.error { background: #d13438; }
+.mb-icon.question { background: #0078d7; }
+
+/* 添加账号：操作行 + 状态行 */
+.add-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+.add-actions .wf-btn { height: 28px; }
+.add-status {
+    margin-top: 10px;
+    min-height: 34px;
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--win-dim);
+    white-space: pre-wrap;
+}
+.add-status.ok { color: #1a7f37; }
+.add-status.warn { color: #9a6700; }
+.add-status.err { color: #c0392b; }
+
+/* 添加账号对话框（AddAccountDialog：ClientSize 420×200） */
+.dlg.add-account { width: 480px; }
+.add-grid {
+    display: grid;
+    grid-template-columns: 70px minmax(0, 1fr);
+    gap: 12px 10px;
+    align-items: center;
+}
+.add-hint { margin-top: 12px; color: var(--win-dim); font-size: 11.5px; line-height: 1.7; }
+
+/* 进程选择对话框（ProcessPickerDialog：ClientSize 800×520） */
+.dlg.proc-picker { width: 800px; max-width: 100%; }
+.pp-search-row {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) 300px;
+    gap: 8px;
+    align-items: center;
+}
+.pp-count { text-align: right; color: var(--win-dim); font-size: 11.5px; }
+.pp-tip { color: var(--win-dim); font-size: 11.5px; margin: 7px 0; }
+.pp-list {
+    height: 400px;
+    max-height: 46vh;
+    overflow: auto;
+    border: 1px solid #7a7a7a;
+    background: #fff;
+}
+.pp-head, .pp-row {
+    display: grid;
+    grid-template-columns: 200px 80px minmax(0, 1fr);
+    font-size: 12px;
+}
+.pp-head {
+    position: sticky;
+    top: 0;
+    background: #f0f0f0;
+    border-bottom: 1px solid #d0d0d0;
+    color: #333;
+    z-index: 1;
+}
+.pp-head span, .pp-row span {
+    padding: 4px 8px;
+    border-right: 1px solid #e4e4e4;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.pp-head span:last-child, .pp-row span:last-child { border-right: none; }
+.pp-head span:nth-child(2), .pp-row span:nth-child(2) { text-align: right; }
+.pp-row { border-bottom: 1px solid #ededed; cursor: pointer; }
+.pp-row:hover { background: #f5f8fc; }
+.pp-row.selected { background: #cfe8ff; }
+.pp-empty { padding: 20px; text-align: center; color: #808080; font-size: 12px; }
+
+/* 文件浏览对话框（模拟 OpenFileDialog） */
+.dlg.file-open { width: 620px; max-width: 100%; }
+.fo-path {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.fo-list {
+    height: 260px;
+    overflow: auto;
+    border: 1px solid #7a7a7a;
+    background: #fff;
+}
+.fo-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+}
+.fo-item:hover { background: #f5f8fc; }
+.fo-item.selected { background: #cfe8ff; }
+.fo-item .fi { color: #d7a54a; }
+.fo-item.dir .fi { color: #e0b34a; }
+.fo-item input { flex: 1; border: none; background: transparent; font-family: var(--mono); }
+
+/* Toast（模拟"已完成"轻提示，不遮挡模拟窗口） */
+.toast-host {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 300;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+.toast {
+    background: var(--bg-card-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--fg);
+    box-shadow: var(--shadow);
+    max-width: 340px;
+    animation: slideIn .18s ease-out;
+}
+.toast.ok { border-left-color: #3dc98a; }
+.toast.warn { border-left-color: var(--gold); }
+.toast.err { border-left-color: #e05f5f; }
+@keyframes slideIn {
+    from { transform: translateY(8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}

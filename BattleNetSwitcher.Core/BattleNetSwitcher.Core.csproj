@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>BattleNetSwitcher.Core</RootNamespace>
+    <AssemblyName>BattleNetSwitcher.Core</AssemblyName>
+  </PropertyGroup>
+
+  <!-- ★ 让 GUI 和 CLI 都能访问本项目的 internal 类型 -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>BattleNetSwitcher</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>BattleNetSwitcher.Cli</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

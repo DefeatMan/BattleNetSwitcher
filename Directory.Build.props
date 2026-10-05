@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <Version>1.0.0</Version>
+    <Company>BattleNetSwitcher</Company>
+    <Product>战网账号切换 &amp; 一键拔线</Product>
+    <Description>Battle.net 账号切换 + 应用断网 / 静音 / 一键拔线工具</Description>
+
+    <RepositoryUrl>https://github.com/DefeatMan/BattleNetSwitcher</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+  </PropertyGroup>
+</Project>

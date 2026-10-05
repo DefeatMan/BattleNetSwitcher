@@ -1,0 +1,417 @@
+/* ============================================================
+ *  client.css —— 右侧"战网登录页"模拟
+ *
+ *  按 account.battlenet.com.cn/login 的 bnet-next 主题还原，
+ *  配色与尺寸直接取自官方样式表里的真实取值：
+ *      页面底色      #15171e
+ *      输入框底/边框 #171920 / rgba(255,255,255,.36)
+ *      主按钮        #0074e0（hover 边框 #47a6ff，active #003f7a，圆角 4px）
+ *      正文/次要文字 #cecece / #148eff
+ *      勾选框        20×20，对勾 #6cdb00
+ *      提示气泡      #22242c + rgba(255,255,255,.12)
+ *  结构顺序也与该页面一致：
+ *      标志 → 邮箱或手机号 → 密码 → 保持登录状态 → 协议 → 登录 → 或 → 网易游戏登录
+ * ============================================================ */
+
+:root {
+    --bnet-bg: #000e2b;
+    --bnet-field: #171920;
+    --bnet-field-border: rgba(255, 255, 255, .36);
+    --bnet-field-border-hi: #148eff;
+    --bnet-text: #cecece;
+    --bnet-text-dim: rgba(255, 255, 255, .6);
+    --bnet-blue: #0074e0;
+    --bnet-blue-hi: #47a6ff;
+    --bnet-blue-down: #003f7a;
+    --bnet-check: #6cdb00;
+    --bnet-panel: #22242c;
+    --bnet-line: rgba(255, 255, 255, .12);
+}
+
+/* ------------------------------------------------------------
+ *  星空 / 极光背景（原创，纯 CSS）
+ *  真实页面是 background-color:#000e2b + 一张 Blizzard 美术大图；
+ *  这里用渐变自绘一张同色调、同氛围的底图，避免使用官方素材。
+ * ------------------------------------------------------------ */
+.bn-page::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        /* 星点：三层不同大小的白点 */
+        radial-gradient(1.4px 1.4px at 12% 18%, rgba(255,255,255,.85), transparent 60%),
+        radial-gradient(1.2px 1.2px at 32% 8%,  rgba(255,255,255,.7),  transparent 60%),
+        radial-gradient(1.6px 1.6px at 68% 24%, rgba(255,255,255,.8),  transparent 60%),
+        radial-gradient(1.1px 1.1px at 84% 12%, rgba(255,255,255,.6),  transparent 60%),
+        radial-gradient(1.3px 1.3px at 22% 42%, rgba(255,255,255,.55), transparent 60%),
+        radial-gradient(1.2px 1.2px at 78% 52%, rgba(255,255,255,.5),  transparent 60%),
+        radial-gradient(1.5px 1.5px at 48% 66%, rgba(255,255,255,.55), transparent 60%),
+        radial-gradient(1.1px 1.1px at 8%  74%, rgba(255,255,255,.45), transparent 60%),
+        radial-gradient(1.3px 1.3px at 92% 82%, rgba(255,255,255,.45), transparent 60%),
+        radial-gradient(1.2px 1.2px at 58% 92%, rgba(255,255,255,.4),  transparent 60%),
+        /* 极光：蓝青色光晕，模拟原图中央的发光区 */
+        radial-gradient(640px 320px at 50% 26%, rgba(40, 120, 220, .34), transparent 68%),
+        radial-gradient(420px 260px at 18% 8%,  rgba(0, 180, 210, .16), transparent 70%),
+        radial-gradient(520px 300px at 88% 76%, rgba(24, 70, 160, .26), transparent 72%),
+        linear-gradient(180deg, #02132f 0%, #000e2b 42%, #000a20 100%);
+}
+.bn-page > * { position: relative; z-index: 1; }
+
+/* ------------------------------------------------------------
+ *  页面外壳
+ * ------------------------------------------------------------ */
+.bn-page {
+    width: 416px;
+    background-color: var(--bnet-bg);
+    border: 1px solid #131b2e;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+    font-family: "Noto Sans", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 24px;
+    color: rgba(255, 255, 255, .84);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+}
+
+/* 标志区（真实：.logo 240×40，margin:0 auto 40px） */
+.bn-brand {
+    display: flex;
+    justify-content: center;
+    padding: 24px 0 0;
+    flex: none;
+}
+.bn-brand .lockup {
+    width: 240px;
+    height: 40px;
+    margin: 0 auto 40px auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 11px;
+}
+.bn-brand .lockup svg { flex: none; display: block; }
+.bn-brand .lockup .txt {
+    font-size: 26px;
+    line-height: 36px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: .06em;
+    white-space: nowrap;
+}
+
+/* 表单主体 */
+.bn-card {
+    padding: 0 0 40px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.bn-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-bottom: 11px;
+}
+.bn-field > label {
+    display: none;              /* 真实页面 label.control-label { display:none } */
+}
+.bn-field .row-label {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+.bn-field .row-label .hint {
+    font-size: 12px;
+    color: rgba(255, 255, 255, .6);
+}
+
+/* 输入框：真实取值 底 #171920 / 边框 rgba(255,255,255,.36) */
+.bn-field input[type="text"],
+.bn-field input[type="password"] {
+    width: 100%;
+    height: 40px;
+    margin: 3px 0;
+    padding: 0 12px;
+    background: #e8f0fe;
+    border: 1px solid #a9a9ac;
+    border-radius: 4px;
+    color: #000;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 24px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+    box-sizing: border-box;
+}
+.bn-field input::placeholder { color: #5b6472; }
+.bn-field input:hover { border-color: #7f8b9c; }
+.bn-field input:focus {
+    border-color: var(--bnet-field-border-hi);
+    box-shadow: 0 0 0 1px var(--bnet-field-border-hi);
+}
+
+/* 密码框：右侧显示/隐藏小按钮 */
+.bn-pwd-wrap { position: relative; }
+.bn-pwd-wrap input { padding-right: 46px; }
+.bn-pwd-toggle {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: none;
+    color: var(--bnet-text-dim);
+    font-size: 15px;
+    cursor: pointer;
+    border-radius: 3px;
+}
+.bn-pwd-toggle:hover { color: #fff; background: rgba(255, 255, 255, .08); }
+
+/* 保持登录状态 */
+.bn-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 24px;
+    padding-left: 0;
+    cursor: pointer;
+}
+.bn-check .box {
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    flex: none;
+    background: var(--bnet-field);
+    border: 1px solid var(--bnet-field-border);
+    border-radius: 4px;
+    position: relative;
+    transition: background-color .2s, border-color .2s;
+}
+.bn-check input { position: absolute; opacity: 0; pointer-events: none; }
+.bn-check .box::after {
+    content: "✓";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--bnet-check);
+    font-size: 14px;
+    font-weight: 700;
+    visibility: hidden;
+}
+.bn-check input:checked + .box::after { visibility: visible; }
+.bn-check input:checked + .box { border-color: rgba(255, 255, 255, .6); }
+.bn-check .label { font-size: 16px; color: rgba(255, 255, 255, .84); line-height: 24px; }
+.bn-check .note {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 20px;
+    color: rgba(255, 255, 255, .6);
+}
+.bn-check .note.disabled { color: rgba(255, 255, 255, .38); }
+
+/* 主按钮：真实取值 #0074e0 */
+.bn-submit {
+    width: 100%;
+    height: 40px;
+    margin: 5px 0 6px;
+    padding: 8px 24px;
+    background: var(--bnet-blue);
+    border: 2px solid transparent;
+    border-radius: 4px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 20px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color .2s, border-color .2s, color .2s;
+}
+.bn-submit:hover, .bn-submit:focus {
+    background: var(--bnet-blue);
+    border-color: var(--bnet-blue-hi);
+    outline: none;
+}
+.bn-submit:active {
+    background: var(--bnet-blue-down);
+    border-color: #005aad;
+    color: rgba(255, 255, 255, .6);
+}
+.bn-submit[disabled] {
+    background: var(--bnet-blue-down);
+    border-color: transparent;
+    color: rgba(255, 255, 255, .6);
+    cursor: not-allowed;
+}
+
+/* 提示气泡（对齐 .dialogue-box：#22242c + 白色 12% 边框） */
+.bn-tip {
+    position: relative;
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--bnet-panel);
+    border: 1px solid var(--bnet-line);
+    border-radius: 4px;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--bnet-text);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .2);
+}
+.bn-tip::after {
+    content: "";
+    position: absolute;
+    top: -8px;
+    left: 22px;
+    width: 14px;
+    height: 14px;
+    background: var(--bnet-panel);
+    border-left: 1px solid var(--bnet-line);
+    border-top: 1px solid var(--bnet-line);
+    transform: rotate(45deg);
+}
+.bn-tip .t { color: #fff; }
+.bn-tip .d { color: var(--bnet-text-dim); }
+
+/* ============================================================
+ *  登录成功页面：只显示账号信息 + 登出
+ * ============================================================ */
+.bn-welcome {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1;
+    min-height: 0;
+}
+.bn-account-card {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 14px;
+    background: rgba(255, 255, 255, .05);
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 6px;
+}
+.bn-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: linear-gradient(150deg, #1f4a72, #0f2438);
+    border: 2px solid rgba(255, 255, 255, .18);
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    font-weight: 700;
+    color: #e8f2fa;
+    position: relative;
+    flex: none;
+}
+.bn-avatar .on {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--bnet-check);
+    border: 2px solid #0b1a2e;
+}
+.bn-account-card .meta { min-width: 0; }
+.bn-account-card .meta .name {
+    font-size: 16px;
+    color: #fff;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.bn-account-card .meta .line {
+    margin-top: 3px;
+    font-size: 12.5px;
+    color: var(--bnet-text-dim);
+}
+.bn-account-card .meta .tags {
+    display: flex;
+    gap: 6px;
+    margin-top: 9px;
+    flex-wrap: wrap;
+}
+.bn-tag {
+    font-size: 11.5px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, .06);
+    border: 1px solid var(--bnet-line);
+    color: var(--bnet-text);
+}
+.bn-tag.ok {
+    background: rgba(108, 219, 0, .14);
+    border-color: rgba(108, 219, 0, .4);
+    color: #a8e77a;
+}
+.bn-tag.blue {
+    background: rgba(0, 116, 224, .18);
+    border-color: rgba(71, 166, 255, .45);
+    color: #8ec8ff;
+}
+
+/* 登出 */
+.bn-logout {
+    width: 100%;
+    height: 40px;
+    margin: 0;
+    padding: 8px 24px;
+    background: rgba(255, 255, 255, .06);
+    border: 2px solid transparent;
+    border-radius: 4px;
+    color: rgba(255, 255, 255, .84);
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 20px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color .15s, color .15s;
+}
+.bn-logout:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+
+/* 覆盖层：正在关闭 / 正在启动 */
+.bn-card { position: relative; }
+.bn-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(21, 23, 30, .93);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    z-index: 40;
+    text-align: center;
+    padding: 26px;
+}
+.bn-overlay .spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 3px solid rgba(0, 116, 224, .25);
+    border-top-color: var(--bnet-blue-hi);
+    animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.bn-overlay .msg { font-size: 14px; color: #fff; }
+.bn-overlay .sub {
+    font-size: 12px;
+    color: var(--bnet-text-dim);
+    font-family: var(--mono);
+    word-break: break-all;
+    max-width: 100%;
+}

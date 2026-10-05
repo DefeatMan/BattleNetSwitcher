@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI 模拟 — BattleNetSwitcher</title>
+<meta name="description" content="在浏览器里还原 BattleNetSwitcher 的 WinForms 界面与战网登录页：切换区服、切换/添加/移除账号、一键拔线、设置。">
+<meta name="bns-version" content="__APP_VERSION__">
+<meta name="bns-repo" content="__REPO_URL__">
+<link rel="icon" href="assets/app.ico" sizes="any">
+<link rel="apple-touch-icon" href="assets/app-icon-256.png">
+<link rel="stylesheet" href="assets/common.css">
+<link rel="stylesheet" href="assets/sim.css">
+<link rel="stylesheet" href="assets/client.css">
+</head>
+<body data-page="gui">
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <img class="brand-mark" src="assets/app-icon.png" alt="BattleNetSwitcher" width="30" height="30">
+      <span>
+        BattleNetSwitcher<br>
+        <span class="brand-sub">UI simulation</span>
+      </span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" data-page="index.html">首页</a>
+      <a href="gui.html" data-page="gui.html">UI 模拟</a>
+      <a class="gh" data-bns-repo href="#" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+<div class="wrap" style="padding-top:34px">
+
+  <div class="sec-head">
+    <div class="sec-kicker">UI Simulation</div>
+    <h2>UI 模拟</h2>
+  </div>
+
+  <!-- 左：战网登录页 / 右：工具窗口（只放内容本身，不套外框） -->
+  <div class="demo-layout">
+
+    <div class="stage" id="client-stage">
+      <div class="scaleme" id="client-host"></div>
+    </div>
+
+    <div class="stage" id="gui-stage">
+      <div class="scaleme" id="gui-host"></div>
+    </div>
+
+  </div>
+
+</div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div><strong style="color:var(--fg)">BattleNetSwitcher</strong> <span data-bns-version>v1.0.0</span> · MIT License</div>
+      <div class="foot-links">
+        <a href="index.html">首页</a>
+        <a data-bns-repo href="#" target="_blank" rel="noopener">GitHub 仓库</a>
+        <a data-bns-releases href="#" target="_blank" rel="noopener">发布页</a>
+      </div>
+    </div>
+    <p class="disclaimer">
+      本项目与 Blizzard Entertainment 无任何关联。"Battle.net""战网"是其商标或注册商标。
+      本页为纯前端模拟，不读写本地文件、不修改防火墙规则、不发起网络请求。
+    </p>
+  </div>
+</footer>
+
+<script src="assets/app.js"></script>
+<script src="assets/sim-data.js"></script>
+<script src="assets/sim-core.js"></script>
+<script src="assets/sim-client.js"></script>
+<script src="assets/sim-gui.js"></script>
+<script src="assets/sim-boot.js"></script>
+</body>
+</html>

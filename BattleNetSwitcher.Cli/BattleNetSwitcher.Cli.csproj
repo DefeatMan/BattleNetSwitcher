@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BattleNetSwitcher.Cli</RootNamespace>
+    <AssemblyName>BattleNetSwitcher.Cli</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BattleNetSwitcher.Core\BattleNetSwitcher.Core.csproj" />
+  </ItemGroup>
+
+</Project>

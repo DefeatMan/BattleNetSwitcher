@@ -1,0 +1,80 @@
+name: Deploy Website
+
+# 官网（Website/ 目录）发布到 GitHub Pages。
+#
+# 触发时机：
+#   * push tag v*        —— 和 release.yml 同样的口径，打标签即上线
+#   * release published  —— 用网页界面发布 Release 时也会更新
+#   * workflow_dispatch  —— 需要手动重发时用
+#
+# 首次使用需要在仓库 Settings → Pages → Source 选择 "GitHub Actions"。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署，新的推送取消排队中的旧任务
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 版本号与仓库地址都从项目本身读，避免官网里再维护一份
+      - name: Inject version / repo into Website
+        run: |
+          VERSION=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props | head -1)
+          REPO=$(grep -oP '(?<=<RepositoryUrl>)[^<]+' Directory.Build.props | head -1)
+          VERSION=${VERSION:-0.0.0}
+          REPO=${REPO:-https://github.com/${{ github.repository }}}
+
+          echo "版本号: $VERSION"
+          echo "仓库地址: $REPO"
+
+          # 只替换占位符，不引入任何构建步骤
+          find Website -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -print0 \
+            | xargs -0 sed -i \
+                -e "s|__APP_VERSION__|$VERSION|g" \
+                -e "s|__REPO_URL__|$REPO|g"
+
+          # 替换结果自检：不该再有占位符残留
+          # （README.md 里会提到这两个占位符，所以只检查真正会部署的文件类型）
+          if grep -rEn --include='*.html' --include='*.js' --include='*.css' \
+               '__APP_VERSION__|__REPO_URL__' Website; then
+            echo "::error::仍存在未替换的占位符"
+            exit 1
+          fi
+          echo "占位符替换完成"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./Website
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # ---------- GUI 单文件（自包含） ----------
+      - name: Publish GUI (self-contained)
+        run: |
+          dotnet publish BattleNetSwitcher/BattleNetSwitcher.csproj \
+            -c Release -r win-x64 --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -o ./publish/gui-sc
+
+      # ---------- CLI 单文件（自包含） ----------
+      - name: Publish CLI (self-contained)
+        run: |
+          dotnet publish BattleNetSwitcher.Cli/BattleNetSwitcher.Cli.csproj \
+            -c Release -r win-x64 --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -o ./publish/cli-sc
+
+      # ---------- GUI 依赖版（exe + dll） ----------
+      - name: Publish GUI (framework-dependent)
+        run: |
+          dotnet publish BattleNetSwitcher/BattleNetSwitcher.csproj \
+            -c Release -r win-x64 --self-contained false \
+            -o ./publish/gui-fxdep
+
+      # ---------- CLI 依赖版（exe + dll） ----------
+      - name: Publish CLI (framework-dependent)
+        run: |
+          dotnet publish BattleNetSwitcher.Cli/BattleNetSwitcher.Cli.csproj \
+            -c Release -r win-x64 --self-contained false \
+            -o ./publish/cli-fxdep
+
+      # ---------- 重命名 + 打包 ----------
+      - name: Arrange files
+        run: |
+          mkdir -p ./out
+          mv ./publish/gui-sc/BattleNetSwitcher.exe     ./out/BattleNetSwitcher.exe
+          mv ./publish/cli-sc/BattleNetSwitcher.Cli.exe ./out/BattleNetSwitcher.Cli.exe
+          cd ./publish && zip -r ../out/BattleNetSwitcher-fxdep.zip gui-fxdep cli-fxdep
+          cd ..
+          ls -la ./out/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./out/BattleNetSwitcher.exe
+            ./out/BattleNetSwitcher.Cli.exe
+            ./out/BattleNetSwitcher-fxdep.zip
+          generate_release_notes: true
