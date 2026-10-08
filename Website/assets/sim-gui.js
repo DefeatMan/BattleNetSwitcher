@@ -1,15 +1,16 @@
 /* ============================================================
- *  sim-gui.js —— 左侧"BattleNetSwitcher"桌面程序模拟
+ *  sim-gui.js —— 右侧"BattleNetSwitcher"桌面程序模拟
  *
- *  逐项对齐真实实现：
+ *  逐项对齐真实实现（v1.1.0）：
  *      Forms/MainForm.cs        三标签页 + 状态栏（版本号可点，跳 Releases）
- *      Forms/AccountPanel.cs    区服下拉 / 账号列表 / 添加 / 刷新 / 自动重启
+ *      Forms/AccountPanel.cs    区服下拉 / 账号列表 / 添加 / 更新当前快照 / 刷新 / 自动重启
  *      Forms/AccountRow.cs      当前行蓝底 + ● 当前 + 切换 + ×，双击整行切换
  *      Forms/AddAccountDialog   邮箱 + 区服，校验必须在 SavedAccountNames 中
  *      Forms/NetworkPanel.cs    目标应用 / 同时静音 / 秒数 / 一键拔线 / 倒计时
  *      Forms/ProcessPickerDialog  搜索 + 回车确定 + 双击选中
  *      Forms/SettingsPanel.cs   两条路径 + 禁用一键拔线
  *      Program.cs               启动时按需提权（模拟器里默认已是管理员）
+ *      Core/SnapshotManager.cs  本地状态快照（切换账号时自动更新源 + 恢复目标）
  * ============================================================ */
 (function (global) {
     'use strict';
@@ -39,7 +40,6 @@
         return b;
     }
 
-    /** 下拉框（模拟 ComboBox，选中值支持任意类型） */
     function dropdown(items, selectedValue, onChange, disabled) {
         var wrap = el('div', 'wf-select');
         wrap.tabIndex = 0;
@@ -51,11 +51,6 @@
         wrap.appendChild(valueEl);
         wrap.appendChild(caret);
 
-        /**
-         * 当前显示的值。
-         * 必须自己维护一份：只读入参 selectedValue 的话，用户选了新项之后
-         * 显示文字不会跟着变（WinForms 的 ComboBox 是会立即变的）。
-         */
         var current = selectedValue;
 
         function labelOf(v) {
@@ -103,7 +98,7 @@
                     e.stopPropagation();
                     close();
                     if (item.value === current) return;
-                    show(item.value);          // 先刷新显示，再通知外部
+                    show(item.value);
                     onChange(item.value);
                 };
                 list.appendChild(row);
@@ -128,7 +123,7 @@
     }
 
     /* ============================================================
-     *  模态对话框（对应 WinForms 的 Form / MessageBox）
+     *  模态对话框
      * ============================================================ */
     function dialog(title, bodyBuilder, buttonsBuilder, opts) {
         opts = opts || {};
@@ -176,7 +171,6 @@
         return api;
     }
 
-    /** 对应 MessageBox 样式：图标 + 文本 + 按钮 */
     function messageBox(iconKind, text, buttons, opts) {
         opts = opts || {};
         return new Promise(function (resolve) {
@@ -215,7 +209,6 @@
         ], opts);
     }
 
-    /** 进度对话框（模拟切换过程中被阻塞的窗口，附执行日志） */
     function progressDialog(title, task) {
         return new Promise(function (resolve, reject) {
             var lines = [];
@@ -261,7 +254,6 @@
         });
     }
 
-    /** 模拟 OpenFileDialog */
     function openFileDialog(title, filterList, files) {
         return new Promise(function (resolve) {
             var selected = files.length > 0 ? files[0] : null;
@@ -326,7 +318,6 @@
         var s = core.state();
         var ui = {
             tab: 'account',
-            /** 拔线过程状态 */
             pull: { phase: 'idle', remain: 0, total: 0, timer: null },
             switchBusy: false,
             chain: null,
@@ -391,12 +382,26 @@
             }
             panel.appendChild(list);
 
-            // 状态文字
+            // 状态文字（增加快照提示）
             var infoSel = selected ? data.tryFromCode(selected) : null;
-            var statusText = !selected
-                ? ''
-                : '区服 [' + (infoSel ? infoSel.displayName : selected) + '] 下共 ' +
-                  core.emailsForRegion(selected).length + ' 个账号。';
+            var statusText = '';
+            if (selected) {
+                var count = core.emailsForRegion(selected).length;
+                statusText = '区服 [' + (infoSel ? infoSel.displayName : selected) + '] 下共 ' + count + ' 个账号。';
+                var curEmail = cfg.emails.length > 0 ? cfg.emails[0] : null;
+                if (curEmail && core.eq(selected, cfg.region)) {
+                    var info = core.snapshotGetInfo(curEmail, selected);
+                    if (info) {
+                        var t = new Date(info.updatedAt);
+                        var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+                        statusText += '  当前账号快照：' +
+                            t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate()) +
+                            ' ' + pad(t.getHours()) + ':' + pad(t.getMinutes());
+                    } else {
+                        statusText += '  当前账号无快照（建议点“更新当前快照”保存一份）';
+                    }
+                }
+            }
             panel.appendChild(el('div', 'ap-status', statusText));
 
             // 按钮行
@@ -405,6 +410,11 @@
             addBtn.style.height = '32px';
             addBtn.style.width = '120px';
             addBtn.disabled = ui.switchBusy;
+
+            var saveSnapBtn = btn('更新当前快照', 'save-snap', onSaveCurrentSnapshot);
+            saveSnapBtn.style.height = '32px';
+            saveSnapBtn.style.width = '140px';
+            saveSnapBtn.disabled = ui.switchBusy;
 
             var refreshBtn = btn('刷新列表', 'refresh', function () {
                 toast('已刷新区服与账号列表');
@@ -424,6 +434,7 @@
             chk.appendChild(el('span', null, '切换后自动重启战网'));
 
             buttons.appendChild(addBtn);
+            buttons.appendChild(saveSnapBtn);
             buttons.appendChild(refreshBtn);
             buttons.appendChild(chk);
             panel.appendChild(buttons);
@@ -432,7 +443,8 @@
         }
 
         function buildAccountRow(email, isCurrent, regionCode) {
-            // 真实的 AccountRow 只有：邮箱 / ● 当前 / 切换 / ×（没有跨区服标记）
+            // 真实的 AccountRow 只有：邮箱 / ● 当前 / 切换 / ×
+            // （快照按钮已移到面板底部，不再出现在每行，避免"点错行"的误导）
             var row = el('div', 'acct-row' + (isCurrent ? ' current' : ''));
             row.appendChild(el('div', 'email', email));
 
@@ -466,7 +478,6 @@
             var disabled = !!s.settings.disablePullout;
             var panel = el('div', 'tab-panel' + (ui.tab === 'network' ? ' active' : ''));
 
-            // 目标应用行
             var top = el('div', 'np-top');
             top.appendChild(el('span', 'wf-label', '目标应用：'));
 
@@ -481,7 +492,6 @@
             pathBox.textContent = s.network.appPath || '';
             top.appendChild(pathBox);
 
-            // WinForms 里 _networkPanel.Enabled = false 会让所有子控件一起变灰不可点
             var busy = ui.pull.phase === 'pulling' || disabled;
             var browse = btn('浏览…', '', function () {
                 openFileDialog('选择要绑定的应用',
@@ -508,7 +518,6 @@
             top.appendChild(pick);
             panel.appendChild(top);
 
-            // 分组框
             var grp = el('div', 'wf-group np-group');
             grp.appendChild(el('span', 'wf-group-title', '一键拔线'));
 
@@ -625,9 +634,39 @@
             }));
             panel.appendChild(cfgRow);
 
-            var hint = el('div', 'wf-hint sp-hint',
-                '留空 = 使用默认位置。便携版 / 绿色版战网请手动指定。');
-            panel.appendChild(hint);
+            panel.appendChild(el('div', 'wf-hint sp-hint',
+                '留空 = 使用默认位置。便携版 / 绿色版战网请手动指定。'));
+
+            // ---- 本地状态快照 ----
+            panel.appendChild(el('div', 'wf-label sp-field-label',
+                '本地状态快照（保存登录凭证，减少切换时的浏览器验证）：'));
+
+            var useSnapChk = el('label', 'wf-check');
+            var useSnapCb = document.createElement('input');
+            useSnapCb.type = 'checkbox';
+            useSnapCb.checked = s.settings.useSnapshotOnSwitch !== false;
+            useSnapChk.appendChild(useSnapCb);
+            useSnapChk.appendChild(el('span', null, '切换账号时优先恢复目标账号的本地快照（推荐）'));
+            panel.appendChild(useSnapChk);
+
+            var autoSnapChk = el('label', 'wf-check');
+            var autoSnapCb = document.createElement('input');
+            autoSnapCb.type = 'checkbox';
+            autoSnapCb.checked = s.settings.autoSaveSnapshotOnSwitch !== false;
+            autoSnapChk.appendChild(autoSnapCb);
+            autoSnapChk.appendChild(el('span', null, '切换时自动为"当前登录账号"更新快照（推荐）'));
+            panel.appendChild(autoSnapChk);
+
+            var closeBeforeChk = el('label', 'wf-check');
+            var closeBeforeCb = document.createElement('input');
+            closeBeforeCb.type = 'checkbox';
+            closeBeforeCb.checked = s.settings.closeBattleNetBeforeSave !== false;
+            closeBeforeChk.appendChild(closeBeforeCb);
+            closeBeforeChk.appendChild(el('span', null, '手动"更新当前快照"时先关闭战网客户端（推荐）'));
+            panel.appendChild(closeBeforeChk);
+
+            panel.appendChild(el('div', 'wf-hint sp-restart-note',
+                '快照根目录：' + core.snapshotRootPath() + '\\<邮箱>__<区服>\\'));
 
             var disChk = el('label', 'wf-check');
             var disCb = document.createElement('input');
@@ -658,7 +697,10 @@
                 core.updateSettings({
                     battleNetExePath: exe || null,
                     battleNetConfigPath: cfg || null,
-                    disablePullout: disCb.checked
+                    disablePullout: disCb.checked,
+                    useSnapshotOnSwitch: useSnapCb.checked,
+                    autoSaveSnapshotOnSwitch: autoSnapCb.checked,
+                    closeBattleNetBeforeSave: closeBeforeCb.checked
                 });
                 ui.savedFlash = '已保存 ✓';
                 renderAll();
@@ -691,7 +733,6 @@
 
             var win = el('div', 'win');
 
-            // 标题栏
             var bar = el('div', 'win-titlebar');
             var ico = el('img', 'ico16');
             ico.src = 'assets/app-icon.png';
@@ -708,7 +749,6 @@
 
             var body = el('div', 'win-body');
 
-            // 标签头
             var tabs = el('div', 'tabs');
             var disabled = !!s.settings.disablePullout;
             var tabDefs = [
@@ -719,8 +759,6 @@
             tabDefs.forEach(function (def) {
                 var t = el('div', 'tab' + (ui.tab === def.key ? ' active' : '') +
                     (def.disabled ? ' disabled' : ''), def.label);
-                // 对应真实实现：面板 Enabled=false + 文字用 SystemColors.GrayText，
-                // 但 tab 本身仍然可以切过去看
                 if (def.disabled) t.style.color = 'var(--win-dim)';
                 t.onclick = function () {
                     ui.tab = def.key;
@@ -738,9 +776,8 @@
             body.appendChild(panels);
             win.appendChild(body);
 
-            // 状态栏
             var status = el('div', 'statusbar');
-            var ver = el('span', 'ver link', 'v' + (options.version || '1.0.0'));
+            var ver = el('span', 'ver link', 'v' + (options.version || '1.1.0'));
             ver.title = '点击查看 GitHub 发布页（模拟）';
             ver.onclick = function () {
                 if (options.releasesUrl && !options.simulateLinks) {
@@ -768,22 +805,26 @@
 
             root.appendChild(win);
             if (options.fit) options.fit();
-            // 通知舞台重新测量
             if (BNS.ui && BNS.ui.notifyLayout) BNS.ui.notifyLayout();
         }
 
         /* ============================================================
-         *  账号切换交互
+         *  账号切换 / 移除 / 添加 / 更新快照
          * ============================================================ */
         function onSwitch(email, regionCode) {
             if (ui.switchBusy) return;
             var info = data.fromCode(regionCode);
             var restart = ui.chain !== false;
 
+            // 提示里明确四步，与真实实现一致
             confirmBox(
                 '确定切换到 ' + email + ' 吗？\r\n' +
-                '区服：' + info.displayName + '\r\n' +
-                '将关闭战网、修改配置并重新启动。',
+                '区服：' + info.displayName + '\r\n\r\n' +
+                '将执行：\r\n' +
+                '  1. 关闭战网客户端\r\n' +
+                '  2. 自动更新当前登录账号的快照（含区服）\r\n' +
+                '  3. 恢复目标账号在该区服的本地快照\r\n' +
+                '  4. 以目标区服重新启动战网',
                 { title: '确认切换' }
             ).then(function (r) {
                 if (r !== 'yes') return;
@@ -791,15 +832,8 @@
                 ui.switchBusy = true;
                 renderAll();
 
-                var liveBox = null;
-                var lines = [];
-
                 progressDialog('正在切换账号', function (log) {
-                    return core.switchAccount(email, regionCode, restart, function (line) {
-                        lines.push(line);
-                        log(line);
-                        if (liveBox) void liveBox;
-                    });
+                    return core.switchAccount(email, regionCode, restart, log);
                 }).then(function (res) {
                     ui.switchBusy = false;
                     ui.tab = 'account';
@@ -818,12 +852,15 @@
             if (ui.switchBusy) return;
             confirmBox(
                 '确定要从本区服移除账号 ' + email + ' 吗？\r\n' +
-                '（仅移除本地记录，不会影响战网账号本身）',
+                '（仅移除本地记录，不会影响战网账号本身；快照也将一并删除）',
                 { title: '确认移除' }
             ).then(function (r) {
                 if (r !== 'yes') return;
                 if (core.bookRemove(email, regionCode)) {
-                    toast('已移除 ' + email + '（' + regionCode + '）', 'ok');
+                    // 与真实实现一致：删除该邮箱在所有区服的快照
+                    var n = core.snapshotRemoveAll(email);
+                    toast('已移除 ' + email + '（' + regionCode + '）' +
+                          (n > 0 ? '，同时删除 ' + n + ' 份快照' : ''), 'ok');
                 }
                 renderAll();
             });
@@ -857,7 +894,6 @@
                 statusEl.className = 'add-status' + (kind ? ' ' + kind : '');
             }
 
-            /** 轮询"战网已记住的账号"，发现新增就回填邮箱（对应真实版的 SavedAccountNames 轮询） */
             function pollForNewAccount(waitedMs) {
                 var added = core.newSinceBaseline();
                 if (added.length > 0) {
@@ -887,7 +923,6 @@
                 }, 400);
             }
 
-            /** 手动刷新：读一次当前已记住的账号，把新增的填进去 */
             function rescan(manual) {
                 var added = core.newSinceBaseline();
                 if (added.length > 0) {
@@ -906,7 +941,7 @@
             }
 
             function launchAndWait() {
-                core.seedLoginBaseline();          // 记下基线
+                core.seedLoginBaseline();
                 stopPolling();
                 launchBtn.disabled = true;
                 launchBtn.textContent = '等待登录中…';
@@ -928,7 +963,6 @@
             function submit() {
                 var email = input.value.trim();
 
-                // 邮箱留空时先自动补一次（用户可能刚登录完）
                 if (!email) {
                     rescan(false);
                     email = input.value.trim();
@@ -1011,8 +1045,75 @@
             }, { dlgClass: 'add-account', onClose: stopPolling });
         }
 
+        /**
+         * 更新"当前登录账号"的快照。
+         * 目标由 Battle.net.config 的 SavedAccountNames[0] + SelectedRegion 决定，
+         * 不是用户在列表里点的那一行 —— 这样避免点错行、保存错账号的状态。
+         */
+        function onSaveCurrentSnapshot() {
+            if (ui.switchBusy) return;
+
+            var cfg = core.readConfigAccountsAndRegion();
+            var email = cfg.emails.length > 0 ? cfg.emails[0] : null;
+            var regionCode = cfg.region;
+
+            if (!email) {
+                alertBox(
+                    '战网配置里没有已保存的账号。\r\n\r\n' +
+                    '请先在战网客户端里登录一个账号并勾选"记住密码"，' +
+                    '再回到这里更新快照。',
+                    { title: '无法更新快照' }
+                );
+                return;
+            }
+
+            var info = data.fromCode(regionCode);
+            var exists = core.snapshotExists(email, regionCode);
+            var verb = exists ? '更新' : '保存';
+
+            confirmBox(
+                verb + '当前登录账号 ' + email + ' 的快照？\r\n' +
+                '区服：' + info.displayName + '\r\n\r\n' +
+                '⚠ 请确保战网客户端当前已经完成该账号的登录与验证。\r\n' +
+                '保存过程会先关闭战网客户端。是否继续？',
+                { title: verb + '当前快照' }
+            ).then(function (r) {
+                if (r !== 'yes') return;
+
+                ui.switchBusy = true;
+                renderAll();
+
+                progressDialog(verb + '快照', function (log) {
+                    return core.snapshotSave(email, regionCode, log);
+                }).then(function (res) {
+                    ui.switchBusy = false;
+                    renderAll();
+                    var snap = res.info;
+                    var t = new Date(snap.updatedAt);
+                    var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+                    var stamp = t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate()) +
+                                ' ' + pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds());
+                    return alertBox(
+                        res.log.join('\r\n') + '\r\n\r\n' +
+                        '快照已' + verb + '：\r\n' +
+                        '  邮箱：' + snap.email + '\r\n' +
+                        '  区服：' + snap.region + '\r\n' +
+                        '  文件：' + snap.fileCount + ' 个\r\n' +
+                        '  UnifiedAuth 条目：' + snap.uniqueIdCount + ' 个\r\n' +
+                        '  时间：' + stamp,
+                        { title: verb + '快照成功', mono: true }
+                    );
+                }, function (err) {
+                    ui.switchBusy = false;
+                    renderAll();
+                    return alertBox(err && err.message ? err.message : String(err),
+                        { title: verb + '快照失败', kind: 'error' });
+                });
+            });
+        }
+
         /* ============================================================
-         *  一键拔线交互
+         *  一键拔线
          * ============================================================ */
         function pickProcess() {
             var procs = data.SEED_PROCESSES.slice();
@@ -1128,7 +1229,6 @@
             if (ui.pull.phase === 'pulling') return;
             s = core.state();
 
-            // 全程内联：真实程序这里只在分组框里显示倒计时，不弹任何窗口
             if (!s.network.appPath) {
                 ui.pull.phase = 'createFailed';
                 ui.pull.error = '请先点击"浏览…"或"选择…"指定目标应用。';
@@ -1138,10 +1238,8 @@
 
             var ruleName = s.network.ruleName;
             var procName = s.network.procName;
-            var mute = !!s.network.mute;
             var seconds = s.network.pullSeconds || 3;
 
-            // FirewallManager.CreateBlockRule：普通用户模式下会抛 netsh 权限错误
             try {
                 core.createBlockRule(ruleName, s.network.appPath);
             } catch (err) {
@@ -1188,11 +1286,6 @@
 
         /* ============================================================
          *  启动
-         *
-         *  真实程序在启用"一键拔线"时会请求管理员权限（UAC）。
-         *  模拟器不弹这个对话框：容易让人以为是真弹窗，
-         *  也可能被理解成"要不要允许某个未知程序提权"，有歧义。
-         *  这里直接按"用户已同意"处理，默认以管理员模式运行。
          * ============================================================ */
         function boot() {
             s = core.state();
@@ -1201,7 +1294,6 @@
             renderAll();
         }
 
-        /** 外部（页面上的模拟控制条）可调用的接口 */
         var controller = {
             render: renderAll,
             boot: boot,
@@ -1211,10 +1303,8 @@
                 core.persist();
                 renderAll();
             },
-            /** 模拟"重启程序"：按当前设置重新走一遍启动流程 */
             restart: function () {
                 var st = core.state();
-                // 重启后按当前设置决定以什么模式运行
                 st.isAdmin = !st.settings.disablePullout;
                 core.persist();
                 renderAll();

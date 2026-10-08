@@ -21,11 +21,26 @@ namespace BattleNetSwitcher.Core
         /// <summary>禁用“一键拔线”功能（GUI 启动不再请求 UAC）。</summary>
         [JsonPropertyName("disablePullout")]
         public bool DisablePullout { get; set; }
+
+        // ------------------------------------------------------------
+        //  本地状态快照
+        // ------------------------------------------------------------
+        /// <summary>切换账号时优先恢复本地快照（若该账号有快照）。</summary>
+        [JsonPropertyName("useSnapshotOnSwitch")]
+        public bool UseSnapshotOnSwitch { get; set; } = true;
+
+        /// <summary>保存快照前是否自动关闭战网客户端（推荐 true）。</summary>
+        [JsonPropertyName("closeBattleNetBeforeSave")]
+        public bool CloseBattleNetBeforeSave { get; set; } = true;
+
+        /// <summary>自定义快照根目录（为空 = %APPDATA%\BattleNetSwitcher\Snapshots）。</summary>
+        [JsonPropertyName("snapshotRootPath")]
+        public string? SnapshotRootPath { get; set; }
     }
 
     /// <summary>
     /// 全局配置：%APPDATA%\BattleNetSwitcher\config.json
-    /// 用于覆盖默认的战网路径、禁用拔线功能等。
+    /// 用于覆盖默认的战网路径、禁用拔线功能、快照开关等。
     /// </summary>
     internal static class AppSettings
     {

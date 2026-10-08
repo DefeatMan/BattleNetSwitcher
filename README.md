@@ -11,13 +11,29 @@
 ### 账号切换（GUI / CLI 都支持）
 
 - 按**区服**分组管理账号（国服 / 美服 / 欧服 / 亚服 / 台服）
-- 同一个邮箱可以在多个区服各有一条记录
+- 同一个邮箱可以在多个区服各有一条记录，**快照也按区服分别保存，互不覆盖**
 - 切换时自动关闭战网 → 修改配置 → 带 `--setregion=XX` 重启战网
 - 修改前自动备份 `Battle.net.config` 到 `.backup`
 - 本地维护"邮箱 ↔ 区服"映射（`%APPDATA%\BattleNetSwitcher\accounts.json`），不污染战网配置
 - 支持**便携版 / 绿色版战网**：手动指定战网程序与配置文件路径
 - **关闭战网时让它正常退出**（发退出请求，超时才强杀），
   给它机会把状态与刷新后的令牌好好写盘，而不是被硬杀掉
+
+### 本地状态快照（v1.1.0 新增）
+
+**目的**：减少切换账号时弹出的浏览器验证码。**在登录还新鲜时，把战网客户端的本地状态存一份**，
+之后即使客户端清理了旧凭证，也能写回去让客户端直接向服务端续期。
+
+- **一键保存**：战网客户端当前登录某账号并完成验证后，在工具里点
+  **“更新当前快照”**，工具会关闭战网、把关键文件 + `UnifiedAuth` 注册表子树复制到本地缓存
+- **自动更新**：每次切换账号时（A→B），工具在关闭战网后**自动为 A 更新快照**
+  （因为刚下线的瞬间，A 的凭证是最新的），再恢复 B 的快照，然后启动
+- **按 (邮箱, 区服) 隔离**：同一邮箱在国服和美服各有独立快照，
+  从 A 国服切到 A 美服，会走完整的"更新 A 国服 + 恢复 A 美服"链路，不会串
+- **递归备份注册表**：`UnifiedAuth\<8位十六进制ID>` 下所有值类型
+  （`REG_SZ` / `REG_DWORD` / `REG_QWORD` / `REG_MULTI_SZ` / `REG_BINARY`）都能原样导出与恢复
+- **保护关键键**：整个流程**从不触碰** `EncryptionKey` 和 `CacheDatabase`，
+  破坏它们会导致客户端完全无法登录
 
 ### 一键拔线（仅 GUI，可关闭）
 
@@ -42,7 +58,7 @@
 | 页面 | 内容 |
 |---|---|
 | **[官网首页](https://defeatman.github.io/BattleNetSwitcher/)** | 功能说明、下载 |
-| **[UI 模拟](https://defeatman.github.io/BattleNetSwitcher/gui.html)** | 左侧模拟战网客户端的登录页与登录成功页，右侧还原真实 WinForms 主窗口（切换区服 / 切换账号 / 添加账号 / 一键拔线 / 设置 / UAC 启动流程），两边状态联动 |
+| **[UI 模拟](https://defeatman.github.io/BattleNetSwitcher/gui.html)** | 左侧模拟战网客户端的登录页与登录成功页，右侧还原真实 WinForms 主窗口（切换区服 / 切换账号 / 添加账号 / 更新当前快照 / 一键拔线 / 设置 / UAC 启动流程），两边状态联动 |
 
 模拟器只做演示：不读写本地文件、不调用 `netsh`、不联网，数据只存在浏览器会话里。
 站点源码在 [`Website/`](Website/)（纯静态零依赖，无构建步骤）。
@@ -56,7 +72,9 @@
   - **邮箱填好** → 直接添加（该邮箱必须已在战网客户端勾选"记住密码"）
   - **邮箱留空** → 点"启动战网并等待登录"：工具会以所选区服打开战网，
     你在客户端里登录新号（记得勾"记住密码"），登录成功后邮箱会自动回填
-- 点每行末尾 `×` 从本地记录移除（只删本地记录，不动战网账号）
+- 点**"更新当前快照"**：以战网客户端当前真正登录的账号 + 区服为准，
+  保存/刷新一份本地状态快照（会先关战网）
+- 点每行末尾 `×` 从本地记录移除（只删本地记录，不动战网账号；该邮箱所有区服的快照也会一并删除）
 
 ### 一键拔线页（默认启用）
 
@@ -80,6 +98,9 @@
 
 - **战网程序路径**：便携版/绿色版战网可手动指定 `Battle.net.exe` 完整路径
 - **配置文件路径**：自定义 `Battle.net.config` 位置（留空用默认 `%APPDATA%\Battle.net\Battle.net.config`）
+- **切换账号时优先恢复本地快照**：默认开启。关闭后切换退化为"只改配置+重启"
+- **保存快照前自动关闭战网客户端**：默认开启。建议保持开启，避免半写状态
+- **快照根目录**：留空 = `%APPDATA%\BattleNetSwitcher\Snapshots\`
 - **禁用"一键拔线"功能**：勾选后 GUI 启动不再请求管理员权限，只保留账号切换
 
 修改后需重启程序生效。
@@ -89,14 +110,20 @@
 ## CLI 用法
 
 ```
-BattleNetSwitcher.Cli list [--region <区服>]          列出所有（或指定区服的）账号
-BattleNetSwitcher.Cli regions                         列出所有有账号的区服
-BattleNetSwitcher.Cli switch <邮箱> [--region <区服>] 切换账号
-BattleNetSwitcher.Cli <邮箱> [--region <区服>]        同上（简写）
-BattleNetSwitcher.Cli add <邮箱> --region <区服>      添加账号到区服
-BattleNetSwitcher.Cli remove|rm <邮箱> --region <区服> 从区服移除账号
-BattleNetSwitcher.Cli version                         显示版本号
-BattleNetSwitcher.Cli help                            显示帮助
+BattleNetSwitcher.Cli list [--region <区服>]                列出所有（或指定区服的）账号
+BattleNetSwitcher.Cli regions                               列出所有有账号的区服
+BattleNetSwitcher.Cli switch <邮箱> [--region <区服>]       切换账号
+BattleNetSwitcher.Cli <邮箱> [--region <区服>]              同上（简写）
+BattleNetSwitcher.Cli add <邮箱> --region <区服>            添加账号到区服
+BattleNetSwitcher.Cli remove|rm <邮箱> --region <区服>      从区服移除账号
+
+BattleNetSwitcher.Cli snapshot save <邮箱> [--region <区服>]      保存/更新指定区服的本地状态快照
+BattleNetSwitcher.Cli snapshot list [--region <区服>]             列出所有（或指定区服的）快照
+BattleNetSwitcher.Cli snapshot remove <邮箱> [--region <区服>]    删除快照（不指定区服 = 删该邮箱所有区服）
+BattleNetSwitcher.Cli snapshot restore <邮箱> [--region <区服>]   恢复指定区服的快照（需先手动关战网）
+
+BattleNetSwitcher.Cli version                               显示版本号
+BattleNetSwitcher.Cli help                                  显示帮助
 ```
 
 **区服代码**：`CN` / `US` / `EU` / `KR` / `TW`
@@ -105,14 +132,87 @@ BattleNetSwitcher.Cli help                            显示帮助
 **示例**：
 
 ```bash
-bns list                              # 列出所有区服的账号
+bns list                              # 列出所有区服的账号（有快照的会标 [快照]）
 bns list --region US                  # 只看美服
 bns switch a@b.com --region US        # 切到美服的 a@b.com
 bns add b@c.com --region KR           # 把 b@c.com 加入亚服
 bns remove b@c.com --region KR        # 从亚服移除
+
+bns snapshot save a@b.com --region US # 保存/更新 a@b.com 美服的快照
+bns snapshot list                     # 列出所有快照
+bns snapshot list --region CN         # 只看国服的快照
+bns snapshot remove a@b.com           # 删除 a@b.com 所有区服的快照
+bns snapshot remove a@b.com -r US     # 只删美服那份
+bns snapshot restore a@b.com -r US    # 恢复（需先手动关闭战网）
 ```
 
 > 若邮箱在多个区服有记录，`switch` 必须用 `--region` 指定，否则会报错。
+
+## 本地状态快照（原理与使用）
+
+### 为什么会有浏览器验证码
+
+战网的登录凭证是 **Windows DPAPI 加密的 blob**，存放在：
+
+```
+HKCU\Software\Blizzard Entertainment\Battle.net\UnifiedAuth\<8位十六进制ID>
+```
+
+- 客户端启动时读取、解密，拿去服务端续期；成功就免密进入，失败就弹浏览器
+- 客户端会**主动清理"不活跃"的旧凭证**——离开某账号越久，它的 `UnifiedAuth` 条目越可能被删
+- 被删后切回去就只能走网页验证 → 频繁弹验证码
+
+**快照就是"在凭证还新鲜时备份一份"**，切换时写回去，让客户端读到"已验证过"的本地状态，
+直接向服务端续期，浏览器全程不参与。
+
+### 快照里有什么
+
+```
+%APPDATA%\BattleNetSwitcher\Snapshots\<邮箱安全化>__<区服>\
+├── manifest.json      元数据：邮箱、区服、文件清单（含 SHA256）、UnifiedAuth ID 列表
+├── registry.json      UnifiedAuth 子树的完整导出（递归，含所有值类型）
+└── files\
+    └── Battle.net.config 等战网客户端根目录文件
+```
+
+**目录名示例**：
+
+```
+Snapshots\
+├── user_example.com__CN\         ← user@example.com 在国服的快照
+├── user_example.com__US\         ← user_example.com 在美服的快照
+└── another_at_test.com__CN\
+```
+
+### 使用流程
+
+1. **首次登录某账号**：手动在战网客户端里登录（该弹验证码就弹，无法避免）
+2. **保存快照**：在工具里点"更新当前快照"，工具会：
+   - 优雅关闭战网（让客户端把最新状态写盘）
+   - 复制关键文件到快照目录
+   - 递归导出 `UnifiedAuth` 到 `registry.json`
+3. **正常使用账号**：随便玩，玩完关客户端
+4. **切换时自动更新**：点"切换"到别的账号时：
+   - 关闭战网
+   - **自动为"刚下线的那个账号"更新快照**（此时它的凭证是服务端刚确认过的）
+   - 恢复目标账号的对应区服快照
+   - 以 `--setregion=XX` 启动
+5. **启动后应免验证直连**：若仍弹浏览器 → 该快照的令牌已被服务端作废，需要重新登录并刷新快照
+
+### 什么时候会失效
+
+快照不是万能的，以下情况需要重新登录：
+
+- 服务端主动作废了刷新令牌（如异地登录、改密码、长期不活跃）
+- 客户端已经用服务端的最新状态刷新过本地凭证，而快照是更早的版本
+- 换 Windows 用户 / 换机器：DPAPI blob 绑定原用户和机器，新环境解不开
+
+### 我们**不**碰什么
+
+- `HKCU\...\Battle.net\EncryptionKey` —— 安装级密钥，动它客户端完全登录不了
+- `HKCU\...\Battle.net\CacheDatabase` —— 安装级缓存数据库密钥
+- 战网客户端安装目录里除 `Battle.net.config` 之外的任何文件
+- `Identity\Identity` —— 设备身份，与账号无关
 
 ## 便携版 / 绿色版战网
 
@@ -129,7 +229,11 @@ bns remove b@c.com --region KR        # 从亚服移除
 {
   "battleNetExePath": "D:\\Games\\Battle.net\\Battle.net.exe",
   "battleNetConfigPath": "D:\\Games\\Battle.net\\Battle.net.config",
-  "disablePullout": false
+  "disablePullout": false,
+  "useSnapshotOnSwitch": true,
+  "autoSaveSnapshotOnSwitch": true,
+  "closeBattleNetBeforeSave": true,
+  "snapshotRootPath": null
 }
 ```
 
@@ -178,9 +282,17 @@ BattleNetSwitcher/
 ├── Directory.Build.props              共享属性（版本号、仓库地址）
 ├── BattleNetSwitcher.Core/            类库
 │   ├── AccountBook.cs                 本地"邮箱 ↔ 区服"映射
-│   ├── AccountSwitcher.cs             战网配置读写与账号切换
+│   ├── AccountSwitcher.cs             战网配置读写、账号切换、快照调度
 │   ├── AppInfo.cs                     版本号与仓库地址
-│   ├── AppSettings.cs                 全局设置（战网路径、禁用拔线）
+│   ├── AppSettings.cs                 全局设置（战网路径、快照开关）
+│   ├── SnapshotManager.cs             本地状态快照：保存 / 恢复 / 枚举 / 迁移
+│   ├── Snapshots/                     快照基础设施
+│   │   ├── SafeName.cs                邮箱 → 安全目录名
+│   │   ├── SnapshotPaths.cs           快照路径计算（<safeEmail>__<REGION>）
+│   │   ├── SnapshotInfo.cs            快照运行时视图
+│   │   ├── SnapshotManifest.cs        manifest.json DTO
+│   │   ├── RegistrySnapshot.cs        registry.json DTO
+│   │   └── RegistrySnapshotIO.cs      注册表递归导出/恢复（保护关键键）
 │   ├── AudioSessionController.cs      WASAPI 会话静音
 │   ├── CoreAudioInterop.cs            Core Audio COM 定义
 │   └── FirewallManager.cs             netsh advfirewall 封装
@@ -195,7 +307,7 @@ BattleNetSwitcher/
 │       ├── AddAccountDialog.cs
 │       ├── NetworkPanel.cs
 │       ├── ProcessPickerDialog.cs
-│       └── SettingsDialog.cs
+│       └── SettingsPanel.cs
 ├── BattleNetSwitcher.Cli/             CLI（Console Exe）
 │   ├── Program.cs
 │   └── app.manifest
@@ -210,15 +322,17 @@ BattleNetSwitcher/
 | 文件 | 作用 |
 |---|---|
 | `%APPDATA%\BattleNetSwitcher\accounts.json` | 邮箱 ↔ 区服映射 |
-| `%APPDATA%\BattleNetSwitcher\config.json` | 全局设置（战网路径、禁用拔线） |
+| `%APPDATA%\BattleNetSwitcher\config.json` | 全局设置（战网路径、快照开关等） |
+| `%APPDATA%\BattleNetSwitcher\Snapshots\<邮箱>__<区服>\` | 本地状态快照 |
 | `%APPDATA%\Battle.net\Battle.net.config` | 战网自身配置（默认位置） |
+| `HKCU\Software\Blizzard Entertainment\Battle.net\UnifiedAuth\` | 战网登录凭证（快照来源/目标） |
 | `HKCU\Software\BattleNetTool` | 一键拔线页的目标应用 / 秒数 / 上次选中区服 |
 
 > 官网模拟器不使用以上任何位置：它的数据只放在浏览器的 `sessionStorage` 里。
 
-## 关于战网登录状态（为什么切换后常常要重新登录）
+## 关于战网登录状态
 
-**登录凭证不在 `Battle.net.config` 里** —— 那个文件只有邮箱列表和设置，没有任何密钥：
+**登录凭证不在 `Battle.net.config` 里** —— 那个文件只有邮箱列表和设置：
 
 ```
 Battle.net.config\Client\
@@ -246,22 +360,21 @@ Battle.net.config\Client\
 3. 每次启动时读取、解密，拿去服务端续期：成功就免密进入，失败就弹登录框
 4. **关键：续期是服务端在计时，客户端只负责"到点去换"，而它只在运行期间去换**
 
-### 为什么本工具改不了这一点
+### 本工具是怎么应对的
 
-切换流程要关闭客户端再重启，于是：
+因为"离开客户端越久越可能需要重新登录"是**服务端行为**，本地改不了。
+工具只做两件在本地有效的事：
 
-- 客户端不在运行时，凭证按**服务端时钟**持续老化，没人去续期
-- 因此**离开客户端越久，越可能需要重新登录** —— 这是"改配置 + 重启"式切换的固有代价
-- 令牌寿命由服务端决定，本地没有任何可改的"有效期"字段
+1. **让战网正常退出**：发退出请求（`CloseMainWindow`）并等它自行收尾，超时才强杀 ——
+   给它机会把状态与刷新后的令牌好好写盘
+2. **在凭证还新鲜时存一份快照**：切 A→B 时先为 A 更新快照、再恢复 B 的快照，
+   让 B 起客户端时能读到"已验证过"的本地状态
 
-因此本工具**不搬运任何凭证**。早期版本曾尝试按「账号 + 区服」备份/还原注册表凭证，
-现已全部移除：写回几小时前的旧凭证救不回过期会话，反而可能覆盖客户端刚刷新的新令牌。
-现在只做两件有效的事：
+因此：
 
-- **让战网正常退出**：发退出请求（`CloseMainWindow`）并等它自行收尾，超时才强杀 ——
-  给它机会把状态与刷新后的令牌好好写盘，而不是被硬杀掉
-- **不无谓地重排配置**：目标账号已在 `SavedAccountNames` 首位时就不动它，
-  避免多余的配置写入打断已有会话
+- 首次登录某账号仍需手动完成（含验证码），快照只能省**后续切换**的验证
+- 长期不活跃后仍会失效（服务端作废刷新令牌），需重新登录一次并刷新快照
+- 换 Windows 用户 / 换机器，快照无法复用（DPAPI 限制）
 
 ### 已知的外部限制
 

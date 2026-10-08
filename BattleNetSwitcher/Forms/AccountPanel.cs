@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Runtime.Versioning;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using BattleNetSwitcher.Core;
@@ -14,7 +15,7 @@ namespace BattleNetSwitcher.Forms
     /// 账号切换页：
     ///   * 顶部区服下拉框（只列出有账号的区服）
     ///   * 中部账号列表（当前区服的账号）
-    ///   * 底部添加 / 刷新 / 自动重启
+    ///   * 底部 添加账号 / 更新当前快照 / 刷新列表 / 自动重启
     /// </summary>
     [SupportedOSPlatform("windows")]
     internal sealed class AccountPanel : UserControl
@@ -23,24 +24,18 @@ namespace BattleNetSwitcher.Forms
         private Label _lblEmpty = null!;
         private FlowLayoutPanel _listPanel = null!;
         private Button _btnAdd = null!;
+        private Button _btnSaveCurrentSnapshot = null!;
         private Button _btnRefresh = null!;
         private CheckBox _chkRestart = null!;
         private Label _lblStatus = null!;
 
         private bool _busy;
-
-        /// <summary>
-        /// 允许在 _busy 期间强行刷新列表。
-        /// 用于切换/添加/移除流程的收尾刷新：那时 _busy 仍为 true，
-        /// 而列表必须立刻更新到最新状态，否则界面会停在旧数据上。
-        /// </summary>
         private bool _forceRefresh;
 
         public AccountPanel()
         {
             BuildUi();
 
-            // 首次初始化本地账号本
             try { AccountBook.EnsureInitialized(); } catch { }
 
             ReloadRegions();
@@ -61,10 +56,10 @@ namespace BattleNetSwitcher.Forms
                 BackColor = Color.Transparent
             };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // 区服选择行
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // 列表
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // 状态
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // 按钮行
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             // ---- 区服选择行 ----
             var regionPanel = new FlowLayoutPanel
@@ -126,7 +121,6 @@ namespace BattleNetSwitcher.Forms
                 if (e.Control != null) ResizeRow(e.Control);
             };
 
-            // 空列表时显示的提示
             _lblEmpty = new Label
             {
                 Text = "本区服暂无账号。点击下方“添加账号”加入。",
@@ -164,6 +158,14 @@ namespace BattleNetSwitcher.Forms
             };
             _btnAdd.Click += OnAddAccount;
 
+            _btnSaveCurrentSnapshot = new Button
+            {
+                Text = "更新当前快照",
+                Size = new Size(140, 32),
+                Margin = new Padding(0, 0, 8, 0)
+            };
+            _btnSaveCurrentSnapshot.Click += OnSaveCurrentSnapshot;
+
             _btnRefresh = new Button
             {
                 Text = "刷新列表",
@@ -185,6 +187,7 @@ namespace BattleNetSwitcher.Forms
             };
 
             btnPanel.Controls.Add(_btnAdd);
+            btnPanel.Controls.Add(_btnSaveCurrentSnapshot);
             btnPanel.Controls.Add(_btnRefresh);
             btnPanel.Controls.Add(_chkRestart);
 
@@ -220,7 +223,6 @@ namespace BattleNetSwitcher.Forms
                 _cmbRegion.EndUpdate();
             }
 
-            // 恢复原选中
             if (codes.Count > 0)
             {
                 int index = 0;
@@ -283,10 +285,6 @@ namespace BattleNetSwitcher.Forms
         // ------------------------------------------------------------
         private void RefreshAccountList()
         {
-            // 正常忙碌期间不刷新（避免和切换流程抢控件）；
-            // 但切换/添加结束时的收尾刷新必须能穿透 —— 那时 _busy 还是 true
-            // （SetBusy(false) 在 finally 里还没执行），一刀切地 return 会让列表
-            // 停留在旧数据上，表现就是"点了切换没反应，·当前 还在原来的账号"。
             if (_busy && !_forceRefresh) return;
 
             var region = GetSelectedRegionInfo();
@@ -303,7 +301,6 @@ namespace BattleNetSwitcher.Forms
 
             var emails = AccountBook.GetEmailsForRegion(region.Code);
 
-            // 判断哪个是当前自动登录账号（SavedAccountNames 首位）
             string? currentFirst = null;
             string? currentRegionCode = null;
             try
@@ -369,7 +366,7 @@ namespace BattleNetSwitcher.Forms
         private void ResizeRow(Control c)
         {
             int width = _listPanel.ClientSize.Width - 4;
-            if (width < 200) width = 200;
+            if (width < 240) width = 240;
             c.Width = width;
         }
 
@@ -382,8 +379,6 @@ namespace BattleNetSwitcher.Forms
 
             string preset = GetSelectedRegionCode() ?? LoadLastRegion();
 
-            // 非模态：用户可能在窗口开着的时候去战网客户端登录新号，
-            // 窗口里的“等待登录完成”轮询需要和登录操作并存。
             var dlg = new AddAccountDialog(preset);
             dlg.FormClosed += (_, _) =>
             {
@@ -392,7 +387,6 @@ namespace BattleNetSwitcher.Forms
                 if (AccountBook.Add(dlg.Email, dlg.SelectedRegion))
                 {
                     ReloadRegions();
-                    // 切到刚添加的区服
                     for (int i = 0; i < _cmbRegion.Items.Count; i++)
                     {
                         if (_cmbRegion.Items[i] is RegionInfo ri &&
@@ -413,7 +407,92 @@ namespace BattleNetSwitcher.Forms
                 }
             };
 
-            dlg.Show(this);   // 非模态
+            dlg.Show(this);
+        }
+
+        // ------------------------------------------------------------
+        //  更新“当前登录账号”的快照
+        // ------------------------------------------------------------
+        private async void OnSaveCurrentSnapshot(object? sender, EventArgs e)
+        {
+            if (_busy) return;
+
+            // 从 Battle.net.config 读取“当前真正在登录的账号 + 区服”
+            string? email = null;
+            string regionCode = "CN";
+            try
+            {
+                var (saved, sel) = AccountSwitcher.ReadConfigAccountsAndRegion();
+                if (saved.Count > 0) email = saved[0];
+                if (!string.IsNullOrWhiteSpace(sel)) regionCode = sel;
+            }
+            catch { }
+
+            if (string.IsNullOrEmpty(email))
+            {
+                MessageBox.Show(this,
+                    "战网配置里没有已保存的账号。\r\n\r\n" +
+                    "请先在战网客户端里登录一个账号并勾选“记住密码”，" +
+                    "再回到这里更新快照。",
+                    "无法更新快照",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var regionInfo = RegionInfo.TryFromCode(regionCode);
+            string regionDisplay = regionInfo?.DisplayName ?? regionCode;
+
+            bool exists = false;
+            try { exists = SnapshotManager.Exists(email, regionCode); } catch { }
+            string verb = exists ? "更新" : "保存";
+
+            var confirm = MessageBox.Show(this,
+                $"{verb}当前登录账号 {email} 的快照？\r\n" +
+                $"区服：{regionDisplay}\r\n\r\n" +
+                "⚠ 请确保战网客户端当前已经完成该账号的登录与验证。\r\n" +
+                "保存过程会先关闭战网客户端。是否继续？",
+                $"{verb}当前快照",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+            if (confirm != DialogResult.Yes) return;
+
+            SetBusy(true);
+            try
+            {
+                string logBuffer = "";
+                var snap = await Task.Run(() =>
+                {
+                    var sb = new StringBuilder();
+                    var s = AccountSwitcher.SaveSnapshot(
+                        email!, regionCode, m => sb.AppendLine(m));
+                    logBuffer = sb.ToString();
+                    return s;
+                });
+
+                MessageBox.Show(this,
+                    logBuffer +
+                    $"\r\n快照已{verb}：\r\n" +
+                    $"  邮箱：{snap.Email}\r\n" +
+                    $"  区服：{snap.Region}\r\n" +
+                    $"  文件：{snap.FileCount} 个\r\n" +
+                    $"  UnifiedAuth 条目：{snap.UniqueIdCount} 个\r\n" +
+                    $"  时间：{snap.UpdatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}",
+                    $"{verb}快照成功",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                _forceRefresh = true;
+                try { RefreshAccountList(); }
+                finally { _forceRefresh = false; }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, $"{verb}快照失败",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                SetBusy(false);
+            }
         }
 
         // ------------------------------------------------------------
@@ -426,9 +505,14 @@ namespace BattleNetSwitcher.Forms
             var region = GetSelectedRegionInfo();
             if (region == null) return;
 
-            string prompt = $"确定切换到 {email} 吗？\r\n" +
-                            $"区服：{region.DisplayName}\r\n" +
-                            "将关闭战网、修改配置并重新启动。";
+            string prompt =
+                $"确定切换到 {email} 吗？\r\n" +
+                $"区服：{region.DisplayName}\r\n\r\n" +
+                "将执行：\r\n" +
+                "  1. 关闭战网客户端\r\n" +
+                "  2. 自动更新当前登录账号的快照（含区服）\r\n" +
+                "  3. 恢复目标账号在该区服的本地快照\r\n" +
+                "  4. 以目标区服重新启动战网";
 
             var r = MessageBox.Show(this, prompt, "确认切换",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);
@@ -453,7 +537,6 @@ namespace BattleNetSwitcher.Forms
                 MessageBox.Show(this, ex.Message, "切换失败",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
 
-                // 同样要穿透：此刻 _busy 仍为 true
                 _forceRefresh = true;
                 try { RefreshAccountList(); }
                 finally { _forceRefresh = false; }
@@ -488,8 +571,6 @@ namespace BattleNetSwitcher.Forms
 
             ReloadRegions();
 
-            // 此刻 _busy 仍为 true（SetBusy(false) 在调用方的 finally 里），
-            // 用 _forceRefresh 穿透守卫，保证列表立刻更新
             _forceRefresh = true;
             try { RefreshAccountList(); }
             finally { _forceRefresh = false; }
@@ -509,6 +590,9 @@ namespace BattleNetSwitcher.Forms
             {
                 if (AccountBook.Remove(email, region.Code))
                 {
+                    // 顺手删除该邮箱在所有区服的快照
+                    try { SnapshotManager.RemoveAll(email); } catch { }
+
                     ReloadRegions();
                     RefreshAccountList();
                 }
@@ -527,6 +611,7 @@ namespace BattleNetSwitcher.Forms
         {
             _busy = busy;
             _btnAdd.Enabled = !busy;
+            _btnSaveCurrentSnapshot.Enabled = !busy;
             _btnRefresh.Enabled = !busy;
             _chkRestart.Enabled = !busy;
             _cmbRegion.Enabled = !busy;

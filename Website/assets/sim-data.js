@@ -88,7 +88,12 @@
     var SEED_SETTINGS = {
         battleNetExePath: null,
         battleNetConfigPath: null,
-        disablePullout: false
+        disablePullout: false,
+        // v1.1.0 快照相关
+        useSnapshotOnSwitch: true,
+        autoSaveSnapshotOnSwitch: true,
+        closeBattleNetBeforeSave: true,
+        snapshotRootPath: null
     };
 
     /** 一键拔线页的持久化设置（等价于注册表 HKCU\Software\BattleNetTool）。 */
@@ -101,6 +106,40 @@
     };
 
     /**
+     * 种子快照（等价于 %APPDATA%\BattleNetSwitcher\Snapshots\<safeEmail>__<REGION>\）。
+     *
+     * 键格式与 Core 的 SnapshotPaths.ForEmail 一致：小写邮箱 + "__" + 大写区服。
+     * 每个账号在它所在的每个区服各有一份 —— 这是本工具 v1.1.0 的核心能力：
+     * 切换账号时自动更新"源账号"的快照、恢复"目标账号"的快照，
+     * 让客户端读到"已验证过"的本地状态直接续期，避免浏览器验证码。
+     *
+     * 时间用"相对现在 N 小时前"，这样无论何时打开页面都像是最近保存过。
+     */
+    function buildSeedSnapshots() {
+        var now = Date.now();
+        var H = 3600 * 1000;
+
+        function entry(email, region, hoursAgo) {
+            return {
+                email: email,
+                region: region,
+                createdAt: new Date(now - (hoursAgo + 24) * H).toISOString(),
+                updatedAt: new Date(now - hoursAgo * H).toISOString(),
+                fileCount: 1,
+                uniqueIdCount: 1
+            };
+        }
+
+        return {
+            'player@example.com__cn': entry('player@example.com', 'CN', 2),
+            'player@example.com__us': entry('player@example.com', 'US', 5),
+            'demo@example.com__cn':   entry('demo@example.com',   'CN', 3),
+            'alt.cn@example.com__cn': entry('alt.cn@example.com', 'CN', 26),
+            'alt.us@example.com__us': entry('alt.us@example.com', 'US', 48)
+        };
+    }
+
+    /**
      * 「浏览…」对话框里的假文件系统。
      * installDir 作为战网默认安装目录出现在设置页的浏览对话框里。
      */
@@ -108,6 +147,7 @@
         // 全部为虚构路径：用户名统一用 demo，游戏目录用 D:\Games
         installDir: 'C:\\Program Files (x86)\\Battle.net',
         configDir: 'C:\\Users\\demo\\AppData\\Roaming\\Battle.net',
+        snapshotDir: 'C:\\Users\\demo\\AppData\\Roaming\\BattleNetSwitcher\\Snapshots',
         files: [
             'C:\\Program Files (x86)\\Battle.net\\Battle.net.exe',
             'C:\\Program Files (x86)\\Battle.net\\Battle.net Launcher.exe',
@@ -159,6 +199,7 @@
         SEED_CONFIG: SEED_CONFIG,
         SEED_SETTINGS: SEED_SETTINGS,
         SEED_NETWORK: SEED_NETWORK,
+        buildSeedSnapshots: buildSeedSnapshots,
         FAKE_FILES: FAKE_FILES,
         SEED_PROCESSES: SEED_PROCESSES,
         GAME_CARDS: GAME_CARDS

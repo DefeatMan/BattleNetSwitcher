@@ -16,9 +16,9 @@ Website/
     ├── client.css          战网客户端模拟（登录页 / 登录成功页）
     ├── app.js              导航、版本号注入、等比缩放舞台、Toast
     ├── sim-data.js         区服定义与演示数据（区服表与 Core/AccountSwitcher.cs 一致）
-    ├── sim-core.js         模拟内核：账号本 / 战网配置 / 切换账号 / 防火墙（对齐 Core/*.cs）
+    ├── sim-core.js         模拟内核：账号本 / 战网配置 / 快照 / 切换账号 / 防火墙（对齐 Core/*.cs）
     ├── sim-client.js       战网客户端状态机（登录页 ↔ 登录成功页）
-    ├── sim-gui.js          WinForms 界面与对话框（含添加账号、进程选择、一键拔线、UAC）
+    ├── sim-gui.js          WinForms 界面与对话框（含添加账号、更新当前快照、进程选择、一键拔线）
     ├── sim-boot.js         按 data-page 挂载模拟器
     ├── app.ico             原样复制自 BattleNetSwitcher/app.ico（页面 favicon）
     ├── app-icon.png        从 app.ico 提取的 64×64，用于导航栏与模拟窗口标题栏
@@ -69,22 +69,54 @@ python3 -m http.server 8765
   这里用纯 CSS 渐变自绘同色调的星空/极光，**不使用官方图片素材**；
   Blizzard 标志用 SVG 几何图形近似，地区图标用色块表示。
 
+### 本地状态快照的模拟（v1.1.0）
+
+`sim-core.js` 增加了与 `SnapshotManager.cs` 对齐的快照逻辑：
+
+- **快照按 (邮箱, 区服) 二维键存储**（对应真实版的
+  `%APPDATA%\BattleNetSwitcher\Snapshots\<safeEmail>__<REGION>\`）。
+  同一邮箱在国服与美服各有独立快照，互不覆盖。
+- **切换账号时自动更新源账号快照**：
+  `switchAccount()` 会在关闭战网后读取当前登录的 (email, region)，
+  若与目标不同，先 `snapshotSave(source)` 再 `snapshotRestore(target)`。
+  完整日志会出现在切换进度对话框里。
+- **种子快照**：`SEED_SNAPSHOTS`（由 `data.buildSeedSnapshots()` 生成）给
+  5 条演示账号各自预置了一份快照，时间戳是"相对现在 N 小时前"。
+  这样一打开页面，切换任意账号都能看到"自动更新源 + 恢复目标"的效果。
+- **快照相关 API**（挂到 `BNS.core` 上）：
+  `snapshotExists` / `snapshotGetInfo` / `snapshotList` / `snapshotListForEmail`
+  / `snapshotSave` / `snapshotRestore` / `snapshotRemove` / `snapshotRemoveAll`
+  / `snapshotKeyOf` / `snapshotRootPath`。
+- **账号页状态行**：若当前登录账号在该区服已有快照，会显示"当前账号快照：YYYY-MM-DD HH:mm"；
+  若没有，会显示"当前账号无快照（建议点'更新当前快照'保存一份）"。
+- **"更新当前快照"按钮**：位于账号页底部按钮行（"添加账号"右侧）。
+  操作对象由 `Battle.net.config` 的 `SavedAccountNames[0]` + `SelectedRegion` 决定，
+  **不是用户点的那一行** —— 避免点错行导致保存到错账号。
+
 演示数据只保留 **两个区服（CN / US）、一共 5 条记录**，
 其中 `player@example.com` 在两个区服各有一条，用来演示跨区服：
 
-| 邮箱 | 区服 |
-|---|---|
-| `player@example.com` | CN、US |
-| `demo@example.com` | CN |
-| `alt.cn@example.com` | CN |
-| `alt.us@example.com` | US |
+| 邮箱 | 区服 | 初始快照 |
+|---|---|---|
+| `player@example.com` | CN、US | 有（两个区服各一份） |
+| `demo@example.com` | CN | 有 |
+| `alt.cn@example.com` | CN | 有 |
+| `alt.us@example.com` | US | 有 |
 
-用它可以触发 CLI 的这条分支：
+用它可以触发 CLI 的这条分支（真实程序）：
 
 ```
 BattleNetSwitcher.Cli switch player@example.com
 错误：账号 player@example.com 在多个区服有记录，请用 --region 指定：
   CN, US
+```
+
+也可以演示：
+
+```
+BattleNetSwitcher.Cli snapshot list
+BattleNetSwitcher.Cli snapshot save player@example.com --region US
+BattleNetSwitcher.Cli snapshot remove player@example.com --region US
 ```
 
 ## 部署（GitHub Pages）
@@ -127,3 +159,6 @@ The deployment was rejected or didn't satisfy other protection rules.
 - 新增区服时，同时更新 `assets/sim-data.js` 的 `REGIONS` 与
   `BattleNetSwitcher.Core/AccountSwitcher.cs` 的 `RegionInfo.All`（顺序也要一致）。
 - 演示账号请使用通用示例邮箱（`*@example.com`），不要写真实个人账号。
+- 快照相关的目录命名、API 名、错误文案要与
+  `BattleNetSwitcher.Core/SnapshotManager.cs` / `Snapshots/SnapshotPaths.cs`
+  保持同步，方便两边对照阅读。

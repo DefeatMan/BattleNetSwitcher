@@ -5,12 +5,14 @@
  *      BattleNetSwitcher.Core/AccountBook.cs        账号本（邮箱 ↔ 区服）
  *      BattleNetSwitcher.Core/AccountSwitcher.cs    战网配置读写 / 切换账号
  *      BattleNetSwitcher.Core/AppSettings.cs        全局设置
+ *      BattleNetSwitcher.Core/SnapshotManager.cs    本地状态快照（v1.1.0 新增）
  *      BattleNetSwitcher.Core/FirewallManager.cs    防火墙规则（模拟）
  *
  *  与真实版的两点差异（都是有意为之）：
  *      1. 所有状态只放在 sessionStorage（关掉标签页即丢失），符合"只会话有效"；
  *         file:// 下浏览器可能禁用 storage，此时自动回落到内存对象。
- *      2. 副作用（杀进程、sleep、netsh、静音）用 setTimeout 模拟，不产生任何真实影响。
+ *      2. 副作用（杀进程、sleep、netsh、静音、快照复制）用 setTimeout 模拟，
+ *         不产生任何真实影响。
  * ============================================================ */
 (function (global) {
     'use strict';
@@ -89,17 +91,18 @@
              *   key   = "邮箱小写@CN" 之类的组合键
              *   value = { loggedIn: 该账号在该区服是否已登录,
              *             keep:     登录时是否勾了"保持登录状态" }
-             *
-             * 语义：
-             *   * 登录后 loggedIn = true；点"登出"只把这一个账号+区服置回未登录
-             *   * 只有 keep = true 的账号，工具切过去才会直接进已登录；
-             *     keep = false 的账号切过去要重新输密码
              */
             clientAccounts: {},
             /** 客户端当前显示的账号（已登录时为邮箱，未登录为 null） */
             clientLoggedIn: null,
             /** 客户端当前所在的区服（登录状态按它区分） */
             clientRegion: null,
+            /**
+             * 本地状态快照（SnapshotManager 的等价物）。
+             * key = 小写邮箱 + "__" + 大写区服（对应 SnapshotPaths.ForEmail）
+             * value = { email, region, createdAt, updatedAt, fileCount, uniqueIdCount }
+             */
+            snapshots: data.buildSeedSnapshots(),
             /**
              * 用于"添加账号 → 等待登录"的基线：进入等待前已记住的邮箱集合。
              * 轮询 SavedAccountNames 时，只有不在基线里的才算"新登录的账号"。
@@ -140,11 +143,6 @@
     /**
      * 初始局面：战网里"已记住密码"的**所有账号**都处于「保持登录状态」，
      * 当前显示的是列表里的第一个。
-     * 也就是说，一打开这个页面，切到任意一个（账号 + 区服）都已经是登录状态，
-     * 不需要再输密码。
-     *
-     * 注意区服必须取自账号本，而不是 LoginSettings.SelectedRegion ——
-     * 否则 US / EU 的账号会被错记成当前区服，切过去就变成"未登录"。
      */
     function buildSeededState() {
         var fresh = buildFreshState();
@@ -188,6 +186,7 @@
 
     function ensureState() {
         if (!state) state = loadState();
+        if (!state.snapshots) state.snapshots = {};
         return state;
     }
 
@@ -214,7 +213,6 @@
         };
     }
 
-    /** topic 形如 'accounts' / 'config' / 'settings' / 'network' / 'client' / 'reset' / '*' */
     function emit(topic, payload) {
         var snapshot = listeners.slice();
         for (var i = 0; i < snapshot.length; i++) {
@@ -243,11 +241,25 @@
         if (s.log.length > 200) s.log.splice(0, s.log.length - 200);
     }
 
+    /** 会话键 = 小写邮箱 + '@' + 区服代码 */
+    function sessionKey(email, region) {
+        var mail = String(email || '').trim().toLowerCase();
+        if (!mail) return '';
+        var code = String(region || selectedRegion() || '').trim().toUpperCase();
+        return mail + '@' + code;
+    }
+
+    /** 快照键 = 小写邮箱 + '__' + 大写区服（对应 SnapshotPaths.ForEmail） */
+    function snapshotKeyOf(email, region) {
+        var mail = String(email || '').trim().toLowerCase();
+        if (!mail) return '';
+        var code = String(region || 'CN').trim().toUpperCase();
+        return mail + '__' + code;
+    }
+
     /* ============================================================
      *  五、账号本（对齐 AccountBook.cs）
      * ============================================================ */
-
-    /** AccountBook.GetEmailsForRegion */
     function emailsForRegion(region) {
         if (isBlank(region)) return [];
         var out = [];
@@ -259,7 +271,6 @@
         return out;
     }
 
-    /** AccountBook.GetRegionsForEmail */
     function regionsForEmail(email) {
         if (isBlank(email)) return [];
         var out = [];
@@ -271,7 +282,6 @@
         return out;
     }
 
-    /** AccountBook.GetActiveRegions：按 RegionInfo.All 顺序，历史遗留代码排到末尾 */
     function activeRegions() {
         var set = {};
         ensureState().accounts.forEach(function (e) {
@@ -290,7 +300,6 @@
         return result;
     }
 
-    /** AccountBook.Contains */
     function bookContains(email, region) {
         if (isBlank(email) || isBlank(region)) return false;
         return ensureState().accounts.some(function (e) {
@@ -298,7 +307,6 @@
         });
     }
 
-    /** AccountBook.Add：重复返回 false */
     function bookAdd(email, region) {
         if (isBlank(email) || isBlank(region)) return false;
         var trimmed = String(email).trim();
@@ -311,7 +319,6 @@
         return true;
     }
 
-    /** AccountBook.Remove */
     function bookRemove(email, region) {
         if (isBlank(email) || isBlank(region)) return false;
         var s = ensureState();
@@ -325,10 +332,6 @@
         return true;
     }
 
-    /**
-     * AccountBook.EnsureInitialized：本地账号本为空时，
-     * 把 Battle.net.config 的 SavedAccountNames 全归到当前 SelectedRegion。
-     */
     function ensureInitialized() {
         var s = ensureState();
         if (s.accounts.length > 0) return false;
@@ -343,12 +346,10 @@
     /* ============================================================
      *  六、战网配置（对齐 AccountSwitcher.cs）
      * ============================================================ */
-
     function clientNode() {
         return ensureState().config.Client;
     }
 
-    /** AccountSwitcher.LoadAccounts：解析 SavedAccountNames */
     function savedAccountNames() {
         var node = clientNode();
         var raw = node && node.SavedAccountNames;
@@ -358,7 +359,6 @@
             .filter(function (x) { return x.length > 0; });
     }
 
-    /** AccountSwitcher.ReadConfigAccountsAndRegion */
     function readConfigAccountsAndRegion() {
         var node = clientNode();
         var region = node && node.LoginSettings && node.LoginSettings.SelectedRegion;
@@ -366,7 +366,6 @@
         return { emails: savedAccountNames(), region: String(region).toUpperCase() };
     }
 
-    /** 当前自动登录账号 = SavedAccountNames 首位 */
     function currentAccount() {
         var names = savedAccountNames();
         return names.length > 0 ? names[0] : null;
@@ -376,7 +375,6 @@
         return readConfigAccountsAndRegion().region;
     }
 
-    /** AccountSwitcher.TrySetConfigRegion */
     function trySetConfigRegion(code, log) {
         try {
             var node = clientNode();
@@ -398,11 +396,177 @@
         return sleep(500);
     }
 
+    /* ============================================================
+     *  七、本地状态快照（对齐 SnapshotManager.cs，v1.1.0 新增）
+     *
+     *  与真实实现保持一致的几件事：
+     *    * 快照以 (邮箱, 区服) 为键，同一邮箱在多个区服各存一份，互不覆盖
+     *    * 保存前先关战网（真实版是 CloseBattleNet，模拟版只 sleep）
+     *    * 切换账号时先为"源账号"更新快照，再恢复"目标账号"的快照
+     *    * 删除账号时清空该邮箱所有区服的快照（对应 SnapshotManager.RemoveAll）
+     * ============================================================ */
+
+    /** SnapshotManager.Exists(email, region) */
+    function snapshotExists(email, region) {
+        var k = snapshotKeyOf(email, region);
+        if (!k) return false;
+        return !!ensureState().snapshots[k];
+    }
+
+    /** SnapshotManager.GetInfo(email, region) */
+    function snapshotGetInfo(email, region) {
+        var k = snapshotKeyOf(email, region);
+        if (!k) return null;
+        var s = ensureState().snapshots[k];
+        if (!s) return null;
+        // 返回副本，避免外部误改
+        return {
+            email: s.email,
+            region: s.region,
+            createdAt: s.createdAt,
+            updatedAt: s.updatedAt,
+            fileCount: s.fileCount,
+            uniqueIdCount: s.uniqueIdCount
+        };
+    }
+
+    /** SnapshotManager.List()：跨邮箱、跨区服 */
+    function snapshotList() {
+        var st = ensureState();
+        var out = [];
+        Object.keys(st.snapshots).sort().forEach(function (k) {
+            var s = st.snapshots[k];
+            if (!s) return;
+            out.push({
+                email: s.email,
+                region: s.region,
+                createdAt: s.createdAt,
+                updatedAt: s.updatedAt,
+                fileCount: s.fileCount,
+                uniqueIdCount: s.uniqueIdCount
+            });
+        });
+        return out;
+    }
+
+    /** 列出某个邮箱在所有区服的快照 */
+    function snapshotListForEmail(email) {
+        if (isBlank(email)) return [];
+        var mail = String(email).toLowerCase();
+        return snapshotList().filter(function (s) {
+            return String(s.email).toLowerCase() === mail;
+        });
+    }
+
     /**
-     * AccountSwitcher.SwitchAccount 的异步版。
-     * 逐步回调 log(line)，让 GUI 能像真实程序一样把日志一行行打出来。
-     * @returns {Promise<{ok:boolean, error?:string, log:string[]}>}
+     * SnapshotManager.Save(email, region)：保存/更新快照。
+     * 异步：模拟关战网 → 复制文件 → 导出注册表 → 原子替换。
      */
+    async function snapshotSave(email, region, log) {
+        var lines = [];
+        function L(text) {
+            lines.push(text);
+            if (log) log(text);
+        }
+
+        if (isBlank(email)) throw new Error('邮箱不能为空。');
+        var mail = String(email).trim();
+        var code = String(region || 'CN').trim().toUpperCase();
+
+        // 真实版在 SaveSnapshot 里先 CloseBattleNet（除非调用方已经关过）
+        L('已请求战网正常退出，等待它自行收尾…');
+        await sleep(180);
+        L('战网已正常退出。');
+
+        L('已复制文件: Battle.net.config');
+        L('已导出 UnifiedAuth，共 1 个子键。');
+
+        var st = ensureState();
+        var k = snapshotKeyOf(mail, code);
+        var now = new Date().toISOString();
+        var prev = st.snapshots[k];
+
+        st.snapshots[k] = {
+            email: mail,
+            region: code,
+            createdAt: prev ? prev.createdAt : now,
+            updatedAt: now,
+            fileCount: 1,
+            uniqueIdCount: 1
+        };
+        persist();
+        emit('snapshots');
+
+        L('快照保存完成：' + mail + ' [' + code + ']，1 个文件，1 个 UnifiedAuth 条目。');
+        return { ok: true, info: snapshotGetInfo(mail, code), log: lines };
+    }
+
+    /**
+     * SnapshotManager.Restore(email, region)：把快照覆盖回战网本地位置。
+     * 未找到快照时返回 ok:false，不抛异常（与真实版 TryRestoreSnapshot 一致）。
+     */
+    async function snapshotRestore(email, region, log) {
+        var lines = [];
+        function L(text) {
+            lines.push(text);
+            if (log) log(text);
+        }
+
+        var mail = String(email || '').trim();
+        var code = String(region || 'CN').trim().toUpperCase();
+
+        if (!snapshotExists(mail, code)) {
+            L('未找到 ' + mail + ' [' + code + '] 的本地快照，跳过恢复。');
+            return { ok: false, log: lines };
+        }
+
+        L('已恢复文件: Battle.net.config');
+        L('已恢复 UnifiedAuth。');
+        await sleep(140);
+        L('已恢复 ' + mail + ' [' + code + '] 的本地快照。');
+        return { ok: true, log: lines };
+    }
+
+    /** SnapshotManager.Remove(email, region)：删除某个区服的快照 */
+    function snapshotRemove(email, region) {
+        var k = snapshotKeyOf(email, region);
+        if (!k) return false;
+        var st = ensureState();
+        if (!st.snapshots[k]) return false;
+        delete st.snapshots[k];
+        persist();
+        emit('snapshots');
+        return true;
+    }
+
+    /** SnapshotManager.RemoveAll(email)：删除该邮箱所有区服的快照 */
+    function snapshotRemoveAll(email) {
+        var mail = String(email || '').trim().toLowerCase();
+        if (!mail) return 0;
+        var st = ensureState();
+        var n = 0;
+        Object.keys(st.snapshots).forEach(function (k) {
+            var s = st.snapshots[k];
+            if (s && String(s.email).toLowerCase() === mail) {
+                delete st.snapshots[k];
+                n++;
+            }
+        });
+        if (n > 0) { persist(); emit('snapshots'); }
+        return n;
+    }
+
+    /* ============================================================
+     *  八、切换账号（对齐 AccountSwitcher.SwitchAccount，v1.1.0）
+     *
+     *  执行顺序与真实实现完全一致：
+     *    1. 关闭战网（优雅退出）
+     *    2. 读 (currentEmail, currentRegion)：
+     *       若与目标 (email, region) 不完全相同 → 自动更新 current 的快照
+     *    3. 恢复目标 (email, region) 的快照（若存在）
+     *    4. 重写 Battle.net.config（SavedAccountNames / SelectedRegion）
+     *    5. 以 --setregion 启动战网
+     * ============================================================ */
     async function switchAccount(email, regionCode, restart, log) {
         var lines = [];
         function L(text) {
@@ -422,13 +586,50 @@
         }
 
         var info = data.fromCode(regionCode);
-        var wasCurrent = eq(currentAccount(), email) && eq(selectedRegion(), info.code);
+        var s = ensureState();
 
+        // 关战网之前先记下"当前登录的账号 + 区服"
+        var currentAcc = currentAccount();
+        var currentReg = selectedRegion();
+
+        var sameTarget = !isBlank(currentAcc) &&
+                         eq(currentAcc, email) &&
+                         eq(currentReg, info.code);
+
+        // ---- 1. 关闭战网 ----
         await killBattleNet(L);
 
-        var again = savedAccountNames();
-        if (again.length > 0) accounts = again;
-        if (!accounts.some(function (a) { return eq(a, email); })) accounts.unshift(email);
+        // ---- 2. 自动为"源账号"更新快照 ----
+        var snapEnabled = s.settings.useSnapshotOnSwitch !== false;
+        var autoSave = s.settings.autoSaveSnapshotOnSwitch !== false;
+
+        if (snapEnabled && autoSave) {
+            if (!isBlank(currentAcc) && !sameTarget) {
+                L('检测到切换前登录的账号 ' + currentAcc + ' [' + currentReg + ']，' +
+                  '正在自动更新其快照…');
+                try {
+                    await snapshotSave(currentAcc, currentReg, L);
+                } catch (e) {
+                    L('自动更新当前账号快照失败（不影响切换）：' + (e && e.message ? e.message : e));
+                }
+            } else if (sameTarget) {
+                L('当前登录账号与目标一致（' + currentAcc + ' [' + currentReg + ']），无需更新快照。');
+            }
+        }
+
+        // ---- 3. 恢复目标账号快照 ----
+        var snapshotRestored = false;
+        if (snapEnabled && !sameTarget) {
+            var r = await snapshotRestore(email, info.code, L);
+            snapshotRestored = r.ok;
+        }
+
+        // 快照恢复会覆盖 Battle.net.config，需要重新读一次
+        if (snapshotRestored) {
+            var again = savedAccountNames();
+            if (again.length > 0) accounts = again;
+            if (!accounts.some(function (a) { return eq(a, email); })) accounts.unshift(email);
+        }
 
         L('已备份原配置到: ' + backupPath());
 
@@ -453,7 +654,6 @@
 
         L('已将账号 ' + email + ' 设置为 [' + info.displayName + '] 的默认登录账号。');
 
-        // AccountSwitcher.SwitchAccount 里的 AccountBook.Add
         bookAdd(email, info.code);
 
         if (restart) {
@@ -469,16 +669,24 @@
                     region: info.code,
                     email: email,
                     args: args,
-                    // 账号确实换了：客户端可以沿用"保持登录状态"直接进已登录
-                    accountChanged: !wasCurrent
+                    accountChanged: !sameTarget
                 });
-                L(wasCurrent
-                    ? '账号未变，客户端保持登录状态。'
-                    : '已切换会话，客户端保持登录状态。');
             } else {
                 L('未能找到战网可执行文件。若使用便携版，请在“设置”里指定路径；' +
                     '也可手动打开战网客户端以应用切换。');
             }
+        }
+
+        // 收尾
+        if (sameTarget) {
+            L('当前账号与目标一致，已跳过快照操作。');
+        } else if (snapshotRestored) {
+            L('已从本地快照恢复登录状态，客户端应会直接向服务端续期，无需浏览器验证。');
+            L('若仍被要求重新登录：说明该快照的令牌已被服务端作废，' +
+              '请在客户端里重新登录一次并让工具重新保存快照。');
+        } else {
+            L('未找到该账号在该区服的快照，走常规流程。');
+            L('切换完成后，可在客户端里登录一次并点“更新当前快照”保存一份。');
         }
 
         return { ok: true, log: lines };
@@ -488,7 +696,6 @@
      *  登录检测（对应真实版的轮询 SavedAccountNames）
      * ------------------------------------------------------------ */
 
-    /** 记下当前已记住的邮箱作为基线，返回基线快照 */
     function seedLoginBaseline() {
         var st = ensureState();
         st.loginBaseline = savedAccountNames();
@@ -496,7 +703,6 @@
         return st.loginBaseline.slice();
     }
 
-    /** 相对基线新增的邮箱（= 等待期间新登录并勾了"记住密码"的账号） */
     function newSinceBaseline() {
         var st = ensureState();
         var base = st.loginBaseline || [];
@@ -509,15 +715,6 @@
         return out;
     }
 
-    /**
-     * 把一个邮箱登记进战网的"记住密码"列表
-     * （等价于真实客户端在登录成功时写入 SavedAccountNames）。
-     *
-     * 关键：真实客户端是把这个账号**移到首位**，而不是追加到末尾。
-     * "当前自动登录账号 = SavedAccountNames 首位"是本工具的核心约定
-     * （见 AccountSwitcher.SwitchAccount 里的 unshift），所以这里也必须置顶，
-     * 否则 currentAccount() 不会指向刚登录的账号，界面就会显示成上一个号。
-     */
     function registerSavedAccount(email) {
         if (isBlank(email)) return false;
         var mail = String(email).trim();
@@ -527,7 +724,6 @@
         var alreadyFirst = names.length > 0 && eq(names[0], mail);
         if (alreadyFirst) return false;
 
-        // 去重后置顶（已在列表里也要移到最前，与客户端一致）
         var rest = names.filter(function (x) { return !eq(x, mail); });
         rest.unshift(mail);
         node.SavedAccountNames = rest.join(',');
@@ -538,14 +734,6 @@
         return true;
     }
 
-    /**
-     * AccountSwitcher.LaunchForRegion 的异步版：
-     * 直接以指定区服启动战网，**不改动** SavedAccountNames / SelectedRegion，
-     * 客户端停在登录页，由用户在客户端里登录一个新号。
-     *
-     * registerOnLogin = 登录成功后把该账号登记进"记住密码"列表，
-     *                   好让调用方（添加账号窗口）能轮询检测到。
-     */
     async function launchForRegion(regionCode, log) {
         var lines = [];
         function L(text) {
@@ -581,27 +769,31 @@
         return { ok: true, log: lines };
     }
 
-    /** AccountSwitcher.GetBattleNetPath：自定义路径优先，否则"注册表"里的默认路径 */
     function battleNetPath() {
         var custom = ensureState().settings.battleNetExePath;
         if (!isBlank(custom)) return custom;
         return data.FAKE_FILES.installDir + '\\Battle.net.exe';
     }
 
-    /** 备份文件路径（= 配置文件路径 + .backup），避免在日志里硬编码用户名 */
     function backupPath() {
         return configPath() + '.backup';
     }
 
-    /** AccountSwitcher.GetConfigPath */
     function configPath() {
         var custom = ensureState().settings.battleNetConfigPath;
         if (!isBlank(custom)) return custom;
         return data.FAKE_FILES.configDir + '\\Battle.net.config';
     }
 
+    /** 快照根目录（对应 SnapshotPaths.RootDir） */
+    function snapshotRootPath() {
+        var custom = ensureState().settings.snapshotRootPath;
+        if (!isBlank(custom)) return custom;
+        return data.FAKE_FILES.snapshotDir;
+    }
+
     /* ============================================================
-     *  七、全局设置（对齐 AppSettings.cs 与 SettingsPanel.OnSave）
+     *  九、全局设置（对齐 AppSettings.cs 与 SettingsPanel.OnSave）
      * ============================================================ */
     function updateSettings(patch) {
         var s = ensureState();
@@ -613,7 +805,7 @@
     }
 
     /* ============================================================
-     *  八、一键拔线（对齐 NetworkPanel.cs + FirewallManager.cs）
+     *  十、一键拔线（对齐 NetworkPanel.cs + FirewallManager.cs）
      * ============================================================ */
     function updateNetwork(patch) {
         var s = ensureState();
@@ -624,7 +816,6 @@
         emit('network', patch);
     }
 
-    /** NetworkPanel.SetTargetApp：切换目标时清理旧规则 */
     function setTargetApp(path) {
         var s = ensureState();
         if (s.network.ruleName) {
@@ -646,10 +837,6 @@
         return out;
     }
 
-    /**
-     * FirewallManager.CreateBlockRule 的模拟。
-     * 真实实现是 netsh advfirewall firewall add rule ...
-     */
     function createBlockRule(ruleName, appPath) {
         if (isBlank(ruleName)) throw new Error('规则名不能为空。');
         if (isBlank(appPath)) throw new Error('应用路径不能为空。');
@@ -673,23 +860,8 @@
     }
 
     /* ============================================================
-     *  九、客户端会话（按账号记录）
+     *  十一、客户端会话（按账号 + 区服记录）
      * ============================================================ */
-    /**
-     * 会话键 = 小写邮箱 + '@' + 区服代码。
-     * 同一个邮箱在 US / EU 是两个不同的战网账号，登录状态不能共享。
-     */
-    function sessionKey(email, region) {
-        var mail = String(email || '').trim().toLowerCase();
-        if (!mail) return '';
-        var code = String(region || selectedRegion() || '').trim().toUpperCase();
-        return mail + '@' + code;
-    }
-
-    /**
-     * 读某个账号在某个区服的登录状态。
-     * region 不传时用当前 SelectedRegion。
-     */
     function accountState(email, region) {
         var key = sessionKey(email, region);
         var st = ensureState();
@@ -700,15 +872,10 @@
         };
     }
 
-    /** 该账号在该区服是否处于登录状态 */
     function hasSession(email, region) {
         return accountState(email, region).loggedIn;
     }
 
-    /**
-     * 登录成功后记录该账号的状态。
-     * keep 就是登录时"保持登录状态"勾选框的值。
-     */
     function setSession(email, region, keep) {
         var key = sessionKey(email, region);
         if (!key) return;
@@ -720,7 +887,6 @@
         emit('client');
     }
 
-    /** 登出：只把这一个「账号 + 区服」置回未登录（其它账号、其它区服都不受影响） */
     function clearSession(email, region) {
         var key = sessionKey(email, region);
         if (!key) return;
@@ -735,11 +901,6 @@
         emit('client');
     }
 
-    /**
-     * 设置"客户端当前所在区服"。
-     * 启动战网（--setregion）只影响客户端自身，**不写**配置里的 SelectedRegion，
-     * 所以必须单独记录 —— 否则登录会被记到配置的区服上，而不是实际打开的那个。
-     */
     function setClientRegion(region) {
         if (isBlank(region)) return;
         var st = ensureState();
@@ -754,14 +915,13 @@
         persist();
     }
 
-    /** 客户端当前所在区服（没设过时跟随 SelectedRegion） */
     function clientRegion() {
         var st = ensureState();
         return String(st.clientRegion || selectedRegion() || 'CN').toUpperCase();
     }
 
     /* ============================================================
-     *  十、对外接口
+     *  十二、对外接口
      * ============================================================ */
     BNS.core = {
         // 状态
@@ -798,6 +958,18 @@
         battleNetPath: battleNetPath,
         configPath: configPath,
         backupPath: backupPath,
+        snapshotRootPath: snapshotRootPath,
+
+        // 本地状态快照
+        snapshotExists: snapshotExists,
+        snapshotGetInfo: snapshotGetInfo,
+        snapshotList: snapshotList,
+        snapshotListForEmail: snapshotListForEmail,
+        snapshotSave: snapshotSave,
+        snapshotRestore: snapshotRestore,
+        snapshotRemove: snapshotRemove,
+        snapshotRemoveAll: snapshotRemoveAll,
+        snapshotKeyOf: snapshotKeyOf,
 
         // 设置 / 拔线
         updateSettings: updateSettings,
@@ -808,7 +980,7 @@
         setRuleEnabled: setRuleEnabled,
         randomHex8: randomHex8,
 
-        // 客户端会话（按账号）
+        // 客户端会话
         accountState: accountState,
         setClientRegion: setClientRegion,
         clientRegion: clientRegion,

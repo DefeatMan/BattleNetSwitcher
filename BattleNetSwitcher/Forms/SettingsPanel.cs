@@ -9,14 +9,17 @@ using BattleNetSwitcher.Core;
 namespace BattleNetSwitcher.Forms
 {
     /// <summary>
-    /// 设置页：战网路径 + 禁用拔线。
+    /// 设置页：战网路径 + 快照配置 + 禁用拔线。
     /// </summary>
     [SupportedOSPlatform("windows")]
     internal sealed class SettingsPanel : UserControl
     {
         private TextBox _txtExe = null!;
         private TextBox _txtConfig = null!;
+        private TextBox _txtSnapshotRoot = null!;
         private CheckBox _chkDisablePullout = null!;
+        private CheckBox _chkUseSnapshot = null!;
+        private CheckBox _chkCloseBeforeSave = null!;
         private Button _btnSave = null!;
         private Label _lblStatus = null!;
 
@@ -39,7 +42,7 @@ namespace BattleNetSwitcher.Forms
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
                 RowCount = 2,
-                Padding = new Padding(12),                 // ★ 与账号切换页一致
+                Padding = new Padding(12),
                 BackColor = Color.Transparent
             };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -71,15 +74,14 @@ namespace BattleNetSwitcher.Forms
                 ColumnCount = 2,
                 RowCount = 1,
                 Width = 640,
-                Height = 32,                                // ★ 27 → 32
+                Height = 32,
                 Margin = new Padding(0, 0, 0, 10),
                 Padding = new Padding(0)
             };
             exePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            exePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100f));  // ★ 与一键拔线页一致
+            exePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100f));
             exePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-            // ★ 加 AutoSize = false：让高度受 cell 控制
             _txtExe = new TextBox
             {
                 Dock = DockStyle.Fill,
@@ -120,7 +122,7 @@ namespace BattleNetSwitcher.Forms
                 ColumnCount = 3,
                 RowCount = 1,
                 Width = 640,
-                Height = 32,                                // ★ 27 → 32
+                Height = 32,
                 Margin = new Padding(0, 0, 0, 4),
                 Padding = new Padding(0)
             };
@@ -173,6 +175,94 @@ namespace BattleNetSwitcher.Forms
                 Margin = new Padding(0, 0, 0, 16)
             };
 
+            // ---- 本地快照区块 ----
+            var lblSnapshot = new Label
+            {
+                Text = "本地状态快照（保存登录凭证，减少切换时的浏览器验证）：",
+                AutoSize = true,
+                Font = new Font(Font, FontStyle.Bold),
+                Margin = new Padding(0, 0, 0, 4)
+            };
+
+            _chkUseSnapshot = new CheckBox
+            {
+                Text = "切换账号时优先恢复本地快照（推荐）",
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 4)
+            };
+
+            _chkCloseBeforeSave = new CheckBox
+            {
+                Text = "保存快照前自动关闭战网客户端（推荐）",
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+
+            var lblSnapRoot = new Label
+            {
+                Text = "快照根目录（留空 = 默认）：",
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 4)
+            };
+
+            var snapRootPanel = new TableLayoutPanel
+            {
+                ColumnCount = 3,
+                RowCount = 1,
+                Width = 640,
+                Height = 32,
+                Margin = new Padding(0, 0, 0, 4),
+                Padding = new Padding(0)
+            };
+            snapRootPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            snapRootPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100f));
+            snapRootPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100f));
+            snapRootPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _txtSnapshotRoot = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                Margin = new Padding(0, 0, 6, 0)
+            };
+
+            var btnBrowseSnap = new Button
+            {
+                Text = "浏览…",
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 0, 8, 0)
+            };
+            btnBrowseSnap.Click += (_, _) =>
+            {
+                using var dlg = new FolderBrowserDialog
+                {
+                    Description = "选择快照根目录",
+                    ShowNewFolderButton = true
+                };
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                    _txtSnapshotRoot.Text = dlg.SelectedPath;
+            };
+
+            var btnResetSnap = new Button
+            {
+                Text = "恢复默认",
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0)
+            };
+            btnResetSnap.Click += (_, _) => { _txtSnapshotRoot.Text = ""; };
+
+            snapRootPanel.Controls.Add(_txtSnapshotRoot, 0, 0);
+            snapRootPanel.Controls.Add(btnBrowseSnap, 1, 0);
+            snapRootPanel.Controls.Add(btnResetSnap, 2, 0);
+
+            var lblSnapHint = new Label
+            {
+                Text = "默认：%APPDATA%\\BattleNetSwitcher\\Snapshots\\<邮箱>\\",
+                AutoSize = true,
+                ForeColor = Color.DimGray,
+                Margin = new Padding(0, 0, 0, 16)
+            };
+
             // ---- 禁用拔线 ----
             _chkDisablePullout = new CheckBox
             {
@@ -194,6 +284,12 @@ namespace BattleNetSwitcher.Forms
             content.Controls.Add(lblCfg);
             content.Controls.Add(cfgPanel);
             content.Controls.Add(lblHint);
+            content.Controls.Add(lblSnapshot);
+            content.Controls.Add(_chkUseSnapshot);
+            content.Controls.Add(_chkCloseBeforeSave);
+            content.Controls.Add(lblSnapRoot);
+            content.Controls.Add(snapRootPanel);
+            content.Controls.Add(lblSnapHint);
             content.Controls.Add(_chkDisablePullout);
             content.Controls.Add(lblRestart);
 
@@ -244,6 +340,9 @@ namespace BattleNetSwitcher.Forms
             _txtExe.Text = s.BattleNetExePath ?? "";
             _txtConfig.Text = s.BattleNetConfigPath ?? "";
             _chkDisablePullout.Checked = s.DisablePullout;
+            _chkUseSnapshot.Checked = s.UseSnapshotOnSwitch;
+            _chkCloseBeforeSave.Checked = s.CloseBattleNetBeforeSave;
+            _txtSnapshotRoot.Text = s.SnapshotRootPath ?? "";
 
             _lblStatus.Text = "";
         }
@@ -255,6 +354,7 @@ namespace BattleNetSwitcher.Forms
         {
             string exe = _txtExe.Text.Trim();
             string cfg = _txtConfig.Text.Trim();
+            string snapRoot = _txtSnapshotRoot.Text.Trim();
 
             if (!string.IsNullOrEmpty(exe) && !File.Exists(exe))
             {
@@ -270,11 +370,31 @@ namespace BattleNetSwitcher.Forms
                 return;
             }
 
+            // 快照根目录做基本校验：如果填了，看看能不能创建
+            if (!string.IsNullOrEmpty(snapRoot))
+            {
+                try
+                {
+                    Directory.CreateDirectory(snapRoot);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this,
+                        "快照根目录无效或无法创建：" + ex.Message,
+                        "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+
             bool oldDisable = AppSettings.Current.DisablePullout;
 
             AppSettings.Current.BattleNetExePath = string.IsNullOrEmpty(exe) ? null : exe;
             AppSettings.Current.BattleNetConfigPath = string.IsNullOrEmpty(cfg) ? null : cfg;
             AppSettings.Current.DisablePullout = _chkDisablePullout.Checked;
+            AppSettings.Current.UseSnapshotOnSwitch = _chkUseSnapshot.Checked;
+            AppSettings.Current.CloseBattleNetBeforeSave = _chkCloseBeforeSave.Checked;
+            AppSettings.Current.SnapshotRootPath =
+                string.IsNullOrEmpty(snapRoot) ? null : snapRoot;
 
             AppSettings.Save();
             AppSettings.Reload();

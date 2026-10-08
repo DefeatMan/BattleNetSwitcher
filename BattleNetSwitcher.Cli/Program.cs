@@ -18,7 +18,6 @@ namespace BattleNetSwitcher.Cli
                 return 0;
             }
 
-            // 首次初始化本地账号本
             try { AccountBook.EnsureInitialized(); } catch { }
 
             string cmd = args[0].ToLowerInvariant();
@@ -71,6 +70,10 @@ namespace BattleNetSwitcher.Cli
                         return RemoveAccount(email, region);
                     }
 
+                case "snapshot":
+                case "snap":
+                    return HandleSnapshot(args);
+
                 case "version":
                 case "-v":
                 case "--version":
@@ -85,7 +88,6 @@ namespace BattleNetSwitcher.Cli
                     return 0;
 
                 default:
-                    // 单个非选项参数视为 email（简写 switch）
                     if (!args[0].StartsWith("-", StringComparison.Ordinal))
                     {
                         return Switch(args[0], GetOption(args, "--region", "-r"));
@@ -100,7 +102,6 @@ namespace BattleNetSwitcher.Cli
         // ------------------------------------------------------------
         //  参数解析
         // ------------------------------------------------------------
-        /// <summary>支持 --region CN / --region=CN / -r CN / -r=CN。</summary>
         private static string? GetOption(string[] args, params string[] names)
         {
             for (int i = 0; i < args.Length; i++)
@@ -120,7 +121,6 @@ namespace BattleNetSwitcher.Cli
             return null;
         }
 
-        /// <summary>找出第一个非选项参数，跳过选项和它们的值。</summary>
         private static string? GetPositional(string[] args, int start, params string[] optionNames)
         {
             for (int i = start; i < args.Length; i++)
@@ -128,7 +128,6 @@ namespace BattleNetSwitcher.Cli
                 string a = args[i];
                 if (a.StartsWith("-", StringComparison.Ordinal)) continue;
 
-                // 是否为某选项的值
                 bool isOptionValue = false;
                 for (int j = 0; j < i; j++)
                 {
@@ -152,7 +151,7 @@ namespace BattleNetSwitcher.Cli
         }
 
         // ------------------------------------------------------------
-        //  list
+        //  list / regions
         // ------------------------------------------------------------
         private static int ListAccounts(string? regionFilter)
         {
@@ -193,7 +192,12 @@ namespace BattleNetSwitcher.Cli
                             string.Equals(regionCode, selectedRegion,
                                           StringComparison.OrdinalIgnoreCase);
 
-                        Console.WriteLine($"  {email}{(isCurrent ? "  <-- 当前" : "")}");
+                        bool hasSnapshot = false;
+                        try { hasSnapshot = SnapshotManager.Exists(email, regionCode); } catch { }
+
+                        string mark = isCurrent ? "  <-- 当前" : "";
+                        string snap = hasSnapshot ? "  [快照]" : "";
+                        Console.WriteLine($"  {email}{mark}{snap}");
                     }
                     Console.WriteLine();
                 }
@@ -207,9 +211,6 @@ namespace BattleNetSwitcher.Cli
             }
         }
 
-        // ------------------------------------------------------------
-        //  regions
-        // ------------------------------------------------------------
         private static int ListRegions()
         {
             try
@@ -245,7 +246,6 @@ namespace BattleNetSwitcher.Cli
         {
             try
             {
-                // 确定目标区服
                 string targetCode;
 
                 if (!string.IsNullOrEmpty(region))
@@ -300,7 +300,7 @@ namespace BattleNetSwitcher.Cli
         }
 
         // ------------------------------------------------------------
-        //  add
+        //  add / remove
         // ------------------------------------------------------------
         private static int AddAccount(string email, string region)
         {
@@ -314,7 +314,6 @@ namespace BattleNetSwitcher.Cli
                     return 1;
                 }
 
-                // 校验邮箱已在 SavedAccountNames 里
                 try
                 {
                     var saved = AccountSwitcher.LoadAccounts();
@@ -351,9 +350,6 @@ namespace BattleNetSwitcher.Cli
             }
         }
 
-        // ------------------------------------------------------------
-        //  remove
-        // ------------------------------------------------------------
         private static int RemoveAccount(string email, string region)
         {
             try
@@ -377,6 +373,276 @@ namespace BattleNetSwitcher.Cli
             catch (Exception ex)
             {
                 Console.Error.WriteLine("移除失败：" + ex.Message);
+                return 1;
+            }
+        }
+
+        // ------------------------------------------------------------
+        //  snapshot 子命令
+        // ------------------------------------------------------------
+        private static int HandleSnapshot(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                PrintSnapshotHelp();
+                return 1;
+            }
+
+            string sub = args[1].ToLowerInvariant();
+
+            switch (sub)
+            {
+                case "save":
+                    {
+                        var email = GetPositional(args, 2, "--region", "-r");
+                        if (string.IsNullOrEmpty(email))
+                        {
+                            Console.Error.WriteLine("用法：snapshot save <邮箱> [--region <区服>]");
+                            return 1;
+                        }
+
+                        string? regionOpt = GetOption(args, "--region", "-r");
+                        string? regionCode = ResolveRegion(email, regionOpt);
+                        if (regionCode == null) return 1;
+
+                        return SnapshotSave(email, regionCode);
+                    }
+
+                case "list":
+                case "ls":
+                    return SnapshotList(GetOption(args, "--region", "-r"));
+
+                case "remove":
+                case "rm":
+                case "delete":
+                    {
+                        var email = GetPositional(args, 2, "--region", "-r");
+                        if (string.IsNullOrEmpty(email))
+                        {
+                            Console.Error.WriteLine(
+                                "用法：snapshot remove <邮箱> [--region <区服>]\r\n" +
+                                "  指定 --region 只删该区服的快照；省略则删除该邮箱所有区服的快照。");
+                            return 1;
+                        }
+                        return SnapshotRemove(email, GetOption(args, "--region", "-r"));
+                    }
+
+                case "restore":
+                    {
+                        var email = GetPositional(args, 2, "--region", "-r");
+                        if (string.IsNullOrEmpty(email))
+                        {
+                            Console.Error.WriteLine(
+                                "用法：snapshot restore <邮箱> [--region <区服>]");
+                            return 1;
+                        }
+
+                        string? regionOpt = GetOption(args, "--region", "-r");
+                        string? regionCode = ResolveRegion(email, regionOpt);
+                        if (regionCode == null) return 1;
+
+                        return SnapshotRestore(email, regionCode);
+                    }
+
+                case "help":
+                case "-h":
+                case "--help":
+                    PrintSnapshotHelp();
+                    return 0;
+
+                default:
+                    Console.Error.WriteLine($"未知 snapshot 子命令：{sub}");
+                    Console.Error.WriteLine();
+                    PrintSnapshotHelp();
+                    return 1;
+            }
+        }
+
+        /// <summary>
+        /// 解析区服：显式 --region &gt; 账号本唯一记录 &gt; 配置文件当前区服。
+        /// 无法唯一确定时返回 null。
+        /// </summary>
+        private static string? ResolveRegion(string email, string? regionOpt)
+        {
+            if (!string.IsNullOrEmpty(regionOpt))
+            {
+                var info = RegionInfo.TryFromCode(regionOpt);
+                if (info == null)
+                {
+                    Console.Error.WriteLine(
+                        $"错误：未知区服 '{regionOpt}'。可用：{string.Join(", ", RegionInfo.All.Select(r => r.Code))}");
+                    return null;
+                }
+                return info.Code;
+            }
+
+            var regions = AccountBook.GetRegionsForEmail(email);
+            if (regions.Count == 1) return regions[0];
+            if (regions.Count > 1)
+            {
+                Console.Error.WriteLine(
+                    $"错误：账号 {email} 在多个区服有记录，请用 --region 指定：\r\n" +
+                    "  " + string.Join(", ", regions));
+                return null;
+            }
+
+            // 落回配置
+            try
+            {
+                var (_, selected) = AccountSwitcher.ReadConfigAccountsAndRegion();
+                return string.IsNullOrEmpty(selected) ? "CN" : selected;
+            }
+            catch
+            {
+                return "CN";
+            }
+        }
+
+        private static int SnapshotSave(string email, string regionCode)
+        {
+            try
+            {
+                bool exists = SnapshotManager.Exists(email, regionCode);
+                Console.WriteLine(exists
+                    ? $"更新已有快照：{email} [{regionCode}]"
+                    : $"保存新快照：{email} [{regionCode}]");
+                Console.WriteLine("（保存前会先关闭战网客户端）");
+                Console.WriteLine();
+
+                var info = AccountSwitcher.SaveSnapshot(email, regionCode, Console.WriteLine);
+
+                Console.WriteLine();
+                Console.WriteLine("快照已保存：");
+                Console.WriteLine($"  邮箱：{info.Email}");
+                Console.WriteLine($"  区服：{info.Region}");
+                Console.WriteLine($"  文件：{info.FileCount} 个");
+                Console.WriteLine($"  UnifiedAuth 条目：{info.UniqueIdCount} 个");
+                Console.WriteLine($"  目录：{info.DirectoryPath}");
+                Console.WriteLine($"  时间：{info.UpdatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("保存快照失败：" + ex.Message);
+                return 1;
+            }
+        }
+
+        private static int SnapshotList(string? regionFilter)
+        {
+            try
+            {
+                var list = SnapshotManager.List();
+
+                if (!string.IsNullOrEmpty(regionFilter))
+                {
+                    var info = RegionInfo.TryFromCode(regionFilter);
+                    if (info == null)
+                    {
+                        Console.Error.WriteLine($"错误：未知区服 '{regionFilter}'。");
+                        return 1;
+                    }
+                    list = list
+                        .Where(s => string.Equals(s.Region, info.Code,
+                                                  StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                }
+
+                if (list.Count == 0)
+                {
+                    Console.WriteLine("没有已保存的快照。");
+                    Console.WriteLine("用 `snapshot save <邮箱> [--region <区服>]` 保存一个。");
+                    return 0;
+                }
+
+                Console.WriteLine($"共 {list.Count} 个快照：");
+                Console.WriteLine();
+
+                foreach (var s in list)
+                {
+                    Console.WriteLine($"  {s.Email}  [{s.Region}]");
+                    Console.WriteLine($"    文件：{s.FileCount} 个，UnifiedAuth：{s.UniqueIdCount} 个");
+                    Console.WriteLine($"    更新：{s.UpdatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
+                    Console.WriteLine($"    目录：{s.DirectoryPath}");
+                    Console.WriteLine();
+                }
+
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("读取快照列表失败：" + ex.Message);
+                return 1;
+            }
+        }
+
+        private static int SnapshotRemove(string email, string? regionOpt)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(regionOpt))
+                {
+                    var info = RegionInfo.TryFromCode(regionOpt);
+                    if (info == null)
+                    {
+                        Console.Error.WriteLine($"错误：未知区服 '{regionOpt}'。");
+                        return 1;
+                    }
+
+                    if (SnapshotManager.Remove(email, info.Code))
+                    {
+                        Console.WriteLine($"已删除 {email} [{info.Code}] 的快照。");
+                        return 0;
+                    }
+
+                    Console.WriteLine($"{email} 没有 [{info.Code}] 区服的快照。");
+                    return 0;
+                }
+
+                int removed = SnapshotManager.RemoveAll(email);
+                if (removed == 0)
+                {
+                    Console.WriteLine($"{email} 没有已保存的快照。");
+                    return 0;
+                }
+
+                Console.WriteLine($"已删除 {email} 的 {removed} 个快照（所有区服）。");
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("删除快照失败：" + ex.Message);
+                return 1;
+            }
+        }
+
+        private static int SnapshotRestore(string email, string regionCode)
+        {
+            try
+            {
+                if (!SnapshotManager.Exists(email, regionCode))
+                {
+                    Console.Error.WriteLine($"{email} [{regionCode}] 没有已保存的快照。");
+                    return 1;
+                }
+
+                Console.WriteLine($"将恢复 {email} [{regionCode}] 的快照。");
+                Console.WriteLine("如果战网客户端正在运行，请先手动关闭。");
+                Console.WriteLine();
+
+                if (AccountSwitcher.TryRestoreSnapshot(email, regionCode, Console.WriteLine))
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("恢复完成。下次启动战网客户端时将使用该快照。");
+                    return 0;
+                }
+
+                Console.Error.WriteLine("恢复失败。");
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("恢复快照失败：" + ex.Message);
                 return 1;
             }
         }
@@ -408,6 +674,16 @@ namespace BattleNetSwitcher.Cli
             Console.WriteLine("                                添加账号到区服");
             Console.WriteLine("  BattleNetSwitcher.Cli remove <邮箱> --region <区服>");
             Console.WriteLine("                                从区服移除账号");
+            Console.WriteLine();
+            Console.WriteLine("  BattleNetSwitcher.Cli snapshot save <邮箱> [--region <区服>]");
+            Console.WriteLine("                                保存/更新账号在指定区服的本地状态快照");
+            Console.WriteLine("  BattleNetSwitcher.Cli snapshot list [--region <区服>]");
+            Console.WriteLine("                                列出所有（或指定区服的）快照");
+            Console.WriteLine("  BattleNetSwitcher.Cli snapshot remove <邮箱> [--region <区服>]");
+            Console.WriteLine("                                删除快照（不指定区服 = 删除所有区服）");
+            Console.WriteLine("  BattleNetSwitcher.Cli snapshot restore <邮箱> [--region <区服>]");
+            Console.WriteLine("                                恢复指定区服的快照（需先手动关闭战网）");
+            Console.WriteLine();
             Console.WriteLine("  BattleNetSwitcher.Cli version 显示版本号");
             Console.WriteLine("  BattleNetSwitcher.Cli help    显示本帮助");
             Console.WriteLine();
@@ -418,7 +694,29 @@ namespace BattleNetSwitcher.Cli
             Console.WriteLine("  BattleNetSwitcher.Cli list");
             Console.WriteLine("  BattleNetSwitcher.Cli list --region US");
             Console.WriteLine("  BattleNetSwitcher.Cli switch a@b.com --region US");
-            Console.WriteLine("  BattleNetSwitcher.Cli add a@b.com --region KR");
+            Console.WriteLine("  BattleNetSwitcher.Cli snapshot save a@b.com --region US");
+            Console.WriteLine("  BattleNetSwitcher.Cli snapshot list");
+        }
+
+        private static void PrintSnapshotHelp()
+        {
+            Console.WriteLine("snapshot 子命令：");
+            Console.WriteLine();
+            Console.WriteLine("  snapshot save <邮箱> [--region <区服>]");
+            Console.WriteLine("      保存或更新指定邮箱在指定区服的本地状态快照。");
+            Console.WriteLine("      保存前会先关闭战网客户端；请确保当前已登录该账号并完成验证。");
+            Console.WriteLine("      若 --region 省略，将尝试从账号本或配置推断。");
+            Console.WriteLine();
+            Console.WriteLine("  snapshot list [--region <区服>]");
+            Console.WriteLine("      列出所有（或指定区服的）快照。");
+            Console.WriteLine();
+            Console.WriteLine("  snapshot remove <邮箱> [--region <区服>]");
+            Console.WriteLine("      删除指定邮箱的快照。");
+            Console.WriteLine("      指定 --region 只删该区服的；省略则删除该邮箱所有区服的快照。");
+            Console.WriteLine();
+            Console.WriteLine("  snapshot restore <邮箱> [--region <区服>]");
+            Console.WriteLine("      把指定区服的快照覆盖回战网的本地位置。");
+            Console.WriteLine("      请先手动关闭战网客户端；恢复完成后下次启动战网时生效。");
         }
     }
 }

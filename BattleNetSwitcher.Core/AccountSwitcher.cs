@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
+using BattleNetSwitcher.Core.Snapshots;
 using Microsoft.Win32;
 
 namespace BattleNetSwitcher.Core
@@ -73,14 +74,8 @@ namespace BattleNetSwitcher.Core
         // ------------------------------------------------------------
         //  配置文件路径
         // ------------------------------------------------------------
-        /// <summary>
-        /// Battle.net.config 的完整路径。
-        /// 优先用 AppSettings.BattleNetConfigPath；
-        /// 未配置则回落到 %APPDATA%\Battle.net\Battle.net.config。
-        /// </summary>
         public static string ConfigPath => GetConfigPath();
 
-        /// <summary>获取战网配置文件路径（供调试/诊断）。</summary>
         public static string GetConfigPath()
         {
             var custom = AppSettings.Current.BattleNetConfigPath;
@@ -92,7 +87,6 @@ namespace BattleNetSwitcher.Core
                 "Battle.net", "Battle.net.config");
         }
 
-        /// <summary>默认的配置文件路径（不读配置）。</summary>
         public static string DefaultConfigPath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Battle.net", "Battle.net.config");
@@ -158,9 +152,82 @@ namespace BattleNetSwitcher.Core
             }
         }
 
-        // ------------------------------------------------------------
-        //  切换账号（含区域）
-        // ------------------------------------------------------------
+        // ============================================================
+        //  本地状态快照
+        // ============================================================
+        /// <summary>
+        /// 保存当前战网客户端的本地状态为 (email, region) 的快照。
+        /// 若 AppSettings.CloseBattleNetBeforeSave == true，会先优雅关闭战网。
+        /// 切换流程内部已经关过战网，可传 closeBattleNet:false 跳过重复关闭。
+        /// </summary>
+        public static SnapshotInfo SaveSnapshot(
+            string email,
+            string region,
+            Action<string>? log = null,
+            bool closeBattleNet = true)
+        {
+            void L(string m) => log?.Invoke(m);
+
+            if (string.IsNullOrWhiteSpace(email))
+                throw new ArgumentException("邮箱不能为空。", nameof(email));
+
+            if (closeBattleNet && AppSettings.Current.CloseBattleNetBeforeSave)
+            {
+                CloseBattleNet(L);
+            }
+
+            string configPath = GetConfigPath();
+            if (!File.Exists(configPath))
+                throw new FileNotFoundException(
+                    "未找到 Battle.net.config 文件，无法保存快照。" +
+                    "请确认战网已安装并登录过该账号。", configPath);
+
+            var info = SnapshotManager.Save(email, region, log);
+            L($"快照保存完成：{info.Email} [{info.Region}]，" +
+              $"{info.FileCount} 个文件，{info.UniqueIdCount} 个 UnifiedAuth 条目。");
+            return info;
+        }
+
+        /// <summary>
+        /// 恢复指定 (email, region) 的快照（不启动战网）。失败不抛异常，只返回 false。
+        /// </summary>
+        public static bool TryRestoreSnapshot(
+            string email, string region, Action<string>? log = null)
+        {
+            void L(string m) => log?.Invoke(m);
+
+            if (string.IsNullOrWhiteSpace(email)) return false;
+
+            try
+            {
+                if (!SnapshotManager.Exists(email, region))
+                {
+                    L($"未找到 {email} [{region}] 的本地快照，跳过恢复（将回退到常规切换流程）。");
+                    return false;
+                }
+
+                SnapshotManager.Restore(email, region, log);
+                L($"已恢复 {email} [{region}] 的本地快照。");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                L($"恢复快照失败（继续常规流程）：{ex.Message}");
+                return false;
+            }
+        }
+
+        // ============================================================
+        //  切换账号
+        //
+        //  执行顺序：
+        //    1. 优雅关闭战网（让客户端把最新凭证/配置写盘）
+        //    2. 读 (currentEmail, currentRegion)：
+        //       若与目标 (email, region) 不完全相同 → 自动更新 current 的快照
+        //    3. 恢复目标 (email, region) 的快照（若存在）
+        //    4. 重写 Battle.net.config（SavedAccountNames / SelectedRegion）
+        //    5. 以 --setregion 启动战网
+        // ============================================================
         public static string SwitchAccount(string targetEmail,
                                            BattleNetRegion region = BattleNetRegion.CN,
                                            bool restart = true,
@@ -194,18 +261,69 @@ namespace BattleNetSwitcher.Core
                     $"账号 {targetEmail} 不在已保存列表中。" +
                     "请先在战网客户端中登录一次该账号（勾选“记住密码”）。");
 
+            // ============ 1. 关闭战网 ============
             CloseBattleNet(L);
 
+            // ============ 2. 决定是否需要为"源账号"更新快照 ============
+            string? currentEmail = null;
+            string currentRegion = regionInfo.Code;
             try
             {
-                var again = LoadAccounts();
-                if (again.Count > 0) accounts = again;
+                var (saved, sel) = ReadConfigAccountsAndRegion();
+                if (saved.Count > 0) currentEmail = saved[0];
+                if (!string.IsNullOrWhiteSpace(sel)) currentRegion = sel.ToUpperInvariant();
             }
             catch { }
 
-            if (!accounts.Any(a => a.Equals(targetEmail, StringComparison.OrdinalIgnoreCase)))
-                accounts.Insert(0, targetEmail);
+            bool sameTarget = !string.IsNullOrEmpty(currentEmail) &&
+                              currentEmail.Equals(targetEmail, StringComparison.OrdinalIgnoreCase) &&
+                              currentRegion.Equals(regionInfo.Code, StringComparison.OrdinalIgnoreCase);
 
+            if (AppSettings.Current.UseSnapshotOnSwitch)
+            {
+                if (!string.IsNullOrEmpty(currentEmail) && !sameTarget)
+                {
+                    L($"检测到切换前登录的账号 {currentEmail} [{currentRegion}]，" +
+                      "正在自动更新其快照…");
+                    try
+                    {
+                        // 战网已关，跳过内部再次关闭
+                        SaveSnapshot(currentEmail, currentRegion, L, closeBattleNet: false);
+                        L($"已更新 {currentEmail} [{currentRegion}] 的快照（保存下线前最新状态）。");
+                    }
+                    catch (Exception ex)
+                    {
+                        L($"自动更新当前账号快照失败（不影响切换）：{ex.Message}");
+                    }
+                }
+                else if (sameTarget)
+                {
+                    L($"当前登录账号与目标一致（{currentEmail} [{currentRegion}]），无需更新快照。");
+                }
+            }
+
+            // ============ 3. 恢复目标快照 ============
+            bool snapshotRestored = false;
+            if (AppSettings.Current.UseSnapshotOnSwitch && !sameTarget)
+            {
+                snapshotRestored = TryRestoreSnapshot(targetEmail, regionInfo.Code, L);
+            }
+
+            // 快照恢复会覆盖 Battle.net.config，需要重新读一次
+            if (snapshotRestored)
+            {
+                try
+                {
+                    var again = LoadAccounts();
+                    if (again.Count > 0) accounts = again;
+                }
+                catch { }
+
+                if (!accounts.Any(a => a.Equals(targetEmail, StringComparison.OrdinalIgnoreCase)))
+                    accounts.Insert(0, targetEmail);
+            }
+
+            // ============ 4. 重写 Battle.net.config ============
             string backupPath = configPath + ".backup";
             try
             {
@@ -223,10 +341,6 @@ namespace BattleNetSwitcher.Core
             var clientNode = config["Client"]
                              ?? throw new InvalidDataException("配置文件结构异常：缺少 Client 节点。");
 
-            // 目标账号已经在首位时**不要**重写 SavedAccountNames。
-            // 原因：这份列表是客户端自己维护的（登录后会把该账号置顶），
-            // 我们每次切换都无脑重排，会让注册表里的登录凭证与配置对不上，
-            // 反而把本来还有效的会话搞失效。只在真的需要时才动它。
             bool namesChanged = accounts.Count == 0 ||
                                 !accounts[0].Equals(targetEmail, StringComparison.OrdinalIgnoreCase);
 
@@ -257,6 +371,7 @@ namespace BattleNetSwitcher.Core
                 L($"写账号本失败（不影响切换）: {ex.Message}");
             }
 
+            // ============ 5. 重启战网 ============
             if (restart)
             {
                 string? exe = GetBattleNetPath();
@@ -271,16 +386,21 @@ namespace BattleNetSwitcher.Core
                 }
             }
 
-            // 收尾说明：让用户知道这次切换后客户端大概会处于什么状态
-            if (!namesChanged)
+            // ---- 收尾说明 ----
+            if (sameTarget)
             {
-                L("账号已在校验范围内且登录态未变动，客户端应当保持原会话。");
+                L("当前账号与目标一致，已跳过快照操作。");
+            }
+            else if (snapshotRestored)
+            {
+                L("已从本地快照恢复登录状态，理论上客户端会直接向服务端续期，无需浏览器验证。");
+                L("若仍被要求重新登录：说明该快照的令牌已被服务端作废，" +
+                  "请在客户端里重新登录一次并刷新快照。");
             }
             else
             {
-                L("切换完成。若客户端要求重新登录，勾选“记住密码”登录一次即可；" +
-                  "战网会话令牌是短命的，且只在客户端运行期间续期，" +
-                  "离开客户端越久越可能需要重新登录。");
+                L("未找到该账号在该区服的快照，走常规流程。");
+                L("切换完成后，可在客户端里登录一次并点“更新当前快照”保存一份。");
             }
 
             return sb.ToString();
@@ -288,8 +408,6 @@ namespace BattleNetSwitcher.Core
 
         /// <summary>
         /// 直接以指定区服启动战网客户端（不改动默认登录账号）。
-        /// 用于"想换区服登录一个新号"：客户端会停在登录页，
-        /// 由用户在客户端里自己登录，登完战网会把账号记进 SavedAccountNames。
         /// </summary>
         public static string LaunchForRegion(BattleNetRegion region, Action<string>? log = null)
         {
@@ -392,17 +510,9 @@ namespace BattleNetSwitcher.Core
         }
 
         /// <summary>
-        /// 关闭战网客户端：**优先让它正常退出**，只有超时才强杀。
-        ///
-        /// 为什么不能直接 Kill()：强杀时客户端来不及做退出流程
-        /// （保存状态、把刷新后的令牌写回注册表、与服务端结束会话），
-        /// 这会直接影响下次启动能否免密恢复 —— 表现为"切换后经常要重新登录"。
-        ///
-        /// 做法：对带主窗口的那个进程发 WM_CLOSE（CloseMainWindow），
-        /// 等它自己退；主窗口进程退出后，其余后台进程（战网会拉起多个）随之结束，
-        /// 仍未结束的才强杀。
+        /// 关闭战网客户端：优先让它正常退出，只有超时才强杀。
         /// </summary>
-        private static void CloseBattleNet(Action<string> log)
+        internal static void CloseBattleNet(Action<string> log)
         {
             Process[] procs;
             try
@@ -421,7 +531,6 @@ namespace BattleNetSwitcher.Core
                 return;
             }
 
-            // 带主窗口的那个才是"主进程"，退出请求要发给它
             Process? main = null;
             foreach (var p in procs)
             {
@@ -453,7 +562,6 @@ namespace BattleNetSwitcher.Core
             {
                 log("已请求战网正常退出，等待它自行收尾…");
 
-                // 给客户端留出收尾时间：它要保存配置并刷新令牌
                 const int waitMs = 8000;
                 const int stepMs = 250;
                 for (int waited = 0; waited < waitMs; waited += stepMs)
@@ -475,11 +583,9 @@ namespace BattleNetSwitcher.Core
             }
             else
             {
-                // 找不到主窗口（可能已在退出中，或以别的方式启动），退回关闭进程
                 log("未找到战网主窗口，无法请求正常退出。");
             }
 
-            // 兜底：把仍在运行的（含后台进程）强杀掉，否则改配置会被占用
             foreach (var p in procs)
             {
                 try
@@ -488,8 +594,6 @@ namespace BattleNetSwitcher.Core
 
                     if (p.MainWindowHandle != IntPtr.Zero)
                     {
-                        // 主窗口可能已经在退出了（CloseMainWindow 返回 false），
-                        // 那种情况别再等 3 秒
                         if (p.CloseMainWindow() && p.WaitForExit(3000)) continue;
                         if (p.HasExited) continue;
                     }
@@ -516,20 +620,12 @@ namespace BattleNetSwitcher.Core
         // ------------------------------------------------------------
         //  查找战网可执行文件
         // ------------------------------------------------------------
-        /// <summary>
-        /// 战网 exe 路径。
-        /// 1) 优先 AppSettings.BattleNetExePath（便携版用户手动指定）
-        /// 2) 注册表卸载信息 InstallLocation / DisplayIcon
-        /// 3) HKCU 战网自身配置 ClientPath
-        /// </summary>
         public static string? GetBattleNetPath()
         {
-            // 1. 用户配置
             var custom = AppSettings.Current.BattleNetExePath;
             if (!string.IsNullOrWhiteSpace(custom) && File.Exists(custom))
                 return custom;
 
-            // 2. HKLM 卸载信息
             const string uninstallKey =
                 @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Battle.net";
             try
@@ -559,7 +655,6 @@ namespace BattleNetSwitcher.Core
             }
             catch { }
 
-            // 3. HKCU 战网自身配置
             const string clientKey = @"Software\Blizzard Entertainment\Battle.net";
             try
             {

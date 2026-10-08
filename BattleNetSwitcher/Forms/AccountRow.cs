@@ -28,7 +28,7 @@ namespace BattleNetSwitcher.Forms
         {
             _email = email;
 
-            Height = 48;                          // ★ 从 44 加到 48，给按钮留够高度
+            Height = 48;
             Width = 400;
             MinimumSize = new Size(240, 48);
             Margin = new Padding(0);
@@ -44,7 +44,7 @@ namespace BattleNetSwitcher.Forms
                 RowCount = 1,
                 BackColor = Color.Transparent,
                 Margin = new Padding(0),
-                Padding = new Padding(12, 6, 8, 6)     // ★ 上下对称 6，左右不对称没问题
+                Padding = new Padding(12, 6, 8, 6)
             };
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64f));
@@ -75,7 +75,6 @@ namespace BattleNetSwitcher.Forms
                 BackColor = Color.Transparent
             };
 
-            // ★ 切换按钮：不加自定义 Font，不加 TextAlign，margin 完全对称
             _btnSwitch = new Button
             {
                 Text = "切换",
@@ -85,20 +84,18 @@ namespace BattleNetSwitcher.Forms
             };
             _btnSwitch.Click += (_, _) => SwitchRequested?.Invoke(this, _email);
 
-            // ★ × 按钮：同样不加 Font 不加 TextAlign，只用 inherit 字体
             _btnRemove = new Button
             {
                 Text = "×",
                 Dock = DockStyle.Fill,
                 Margin = new Padding(2, 4, 0, 4),
                 UseVisualStyleBackColor = true
-                // 不设置 Font，继承窗体默认，与“切换”按钮一致
             };
             _btnRemove.Click += (_, _) =>
             {
                 var r = MessageBox.Show(
                     $"确定要从本区服移除账号 {email} 吗？\r\n" +
-                    "（仅移除本地记录，不会影响战网账号本身）",
+                    "（仅移除本地记录，不会影响战网账号本身；快照也将一并删除）",
                     "确认移除",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
