@@ -10,6 +10,7 @@
 #    make publish-cli-sc  CLI 自包含单文件
 #    make publish-gui-fxdep  GUI 依赖运行时
 #    make publish-cli-fxdep  CLI 依赖运行时
+#    make publish-package-fxdep  把 fxdep 两个目录压成 zip
 #    make clean           清理 build/ 与 obj/bin
 #
 #  变量覆盖：
@@ -33,14 +34,13 @@ DOTNET_FLAGS := -c $(CONFIG) -r $(RID)
 
 # 自包含单文件参数（gui-sc / cli-sc 共用）
 PUBLISH_SC_FLAGS := --self-contained true \
-                    -p:PublishSingleFile=true \
-                    -p:IncludeNativeLibrariesForSelfExtract=true \
-                    -p:EnableCompressionInSingleFile=true
+                    -p:PublishSingleFile=true
 
 .DEFAULT_GOAL := all
 
 .PHONY: all gui cli publish \
         publish-gui-sc publish-cli-sc publish-gui-fxdep publish-cli-fxdep \
+        publish-package-fxdep \
         clean help
 
 # ------------------------------------------------------------
@@ -81,6 +81,12 @@ publish-cli-fxdep:
 	$(DOTNET) publish "$(CLI_PROJ)" $(DOTNET_FLAGS) \
 	  --self-contained false -o "$(PUBLISH_DIR)/cli-fxdep"
 
+# 把两个 fxdep 目录打成 zip（供 Release 上传，目录形态无法单附件上传）
+publish-package-fxdep: publish-gui-fxdep publish-cli-fxdep
+	@echo ">>> 打包 fxdep -> $(PUBLISH_DIR)/BattleNetSwitcher-fxdep.zip"
+	cd "$(PUBLISH_DIR)" && zip -r BattleNetSwitcher-fxdep.zip gui-fxdep cli-fxdep
+	@ls -la "$(PUBLISH_DIR)/BattleNetSwitcher-fxdep.zip"
+
 # ------------------------------------------------------------
 # 清理
 # ------------------------------------------------------------
@@ -104,6 +110,7 @@ help:
 	@echo "  make publish-cli-sc      CLI 自包含单文件"
 	@echo "  make publish-gui-fxdep   GUI 依赖运行时"
 	@echo "  make publish-cli-fxdep   CLI 依赖运行时"
+	@echo "  make publish-package-fxdep  打包 fxdep 目录为 zip"
 	@echo "  make clean               清理 build/ 与 obj/bin"
 	@echo "  make help                显示本帮助"
 	@echo ""

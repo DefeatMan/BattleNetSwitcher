@@ -21,26 +21,33 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      # ---------- 一次 make publish 产出 4 种变体 ----------
-      # （gui-sc / cli-sc / gui-fxdep / cli-fxdep）
-      - name: Publish all variants (make publish)
+      # ---------- 发布 4 个变体 ----------
+      #   gui-sc    → 自包含单文件 exe（直传，不 zip）
+      #   cli-sc    → 自包含单文件 exe（直传，不 zip）
+      #   gui-fxdep / cli-fxdep → exe + dll 目录（打包成 zip）
+      - name: Publish all variants
         run: make publish
 
-      # ---------- 重命名 + 打包 ----------
-      - name: Arrange files
+      - name: Package fxdep
+        run: make publish-package-fxdep
+
+      # ---------- 生成哈希清单，供用户校验 ----------
+      - name: Generate SHA256SUMS
         run: |
-          mkdir -p ./out
-          mv ./build/publish/gui-sc/BattleNetSwitcher.exe     ./out/BattleNetSwitcher.exe
-          mv ./build/publish/cli-sc/BattleNetSwitcher.Cli.exe ./out/BattleNetSwitcher.Cli.exe
-          cd ./build/publish && zip -r ../../out/BattleNetSwitcher-fxdep.zip gui-fxdep cli-fxdep
-          cd ../..
-          ls -la ./out/
+          cd build/publish
+          sha256sum \
+            gui-sc/BattleNetSwitcher.exe \
+            cli-sc/BattleNetSwitcher.Cli.exe \
+            BattleNetSwitcher-fxdep.zip \
+            > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ./out/BattleNetSwitcher.exe
-            ./out/BattleNetSwitcher.Cli.exe
-            ./out/BattleNetSwitcher-fxdep.zip
+            build/publish/gui-sc/BattleNetSwitcher.exe
+            build/publish/cli-sc/BattleNetSwitcher.Cli.exe
+            build/publish/BattleNetSwitcher-fxdep.zip
+            build/publish/SHA256SUMS.txt
           generate_release_notes: true

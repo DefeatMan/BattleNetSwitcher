@@ -48,12 +48,46 @@
 
 ## 下载
 
+从 [GitHub Releases](https://github.com/DefeatMan/BattleNetSwitcher/releases/latest) 下载：
+
 | 文件 | 说明 |
 |---|---|
-| `BattleNetSwitcher.exe` | 图形界面，自带 .NET 运行时，双击即用 |
-| `BattleNetSwitcher.Cli.exe` | 命令行工具，自带 .NET 运行时 |
+| `BattleNetSwitcher.exe` | 图形界面，**自包含单文件**，双击即用（无需安装 .NET） |
+| `BattleNetSwitcher.Cli.exe` | 命令行工具，**自包含单文件**（无需安装 .NET） |
+| `BattleNetSwitcher-fxdep.zip` | GUI + CLI 的依赖运行时版本（需先安装 .NET 8 Desktop Runtime，体积更小） |
+| `SHA256SUMS.txt` | 上面三个文件的 SHA256 校验值 |
 
 启用“一键拔线”时需要**管理员权限**（修改防火墙规则必需）；禁用后不需要。
+
+### 校验下载文件
+
+发布物未做代码签名，建议下载后校验完整性：
+
+**Windows PowerShell**：
+
+```powershell
+Get-FileHash .\BattleNetSwitcher.exe       -Algorithm SHA256
+Get-FileHash .\BattleNetSwitcher.Cli.exe   -Algorithm SHA256
+Get-FileHash .\BattleNetSwitcher-fxdep.zip -Algorithm SHA256
+```
+
+**Linux / macOS / Git Bash**：
+
+```bash
+sha256sum -c SHA256SUMS.txt
+```
+
+与 `SHA256SUMS.txt` 中的值逐字比对，一致即说明文件未被篡改。
+
+### 如果下载被浏览器拦截
+
+因发布物未做代码签名，Edge SmartScreen 或 Chrome Safe Browsing 可能提示
+“无法下载”、“检测到病毒”或“不常见的下载”：
+
+- 这是**基于“无签名 + 下载量低”的启发式判断**，不是真实病毒告警
+- 可在下载提示里选择 **“保留” / “仍然下载” / “显示更多 → 保留”**
+- 也可用上面的 SHA256 校验确认文件完整性
+- 遇到 Defender 误报，欢迎在 [Issues](https://github.com/DefeatMan/BattleNetSwitcher/issues) 反馈
 
 ## 在线体验
 
@@ -257,7 +291,7 @@ Snapshots\
 
 ## 构建
 
-仓库根目录提供统一的 `Makefile` 作为构建入口，所有产物集中输出到顶层 `build/` 目录，不再散落在各项目的 `bin/` 下。
+仓库根目录提供统一的 `Makefile` 作为构建入口，所有产物集中输出到顶层 `build/` 目录。
 
 ### 克隆与构建
 
@@ -279,12 +313,12 @@ make help          # 显示所有目标与可用变量
 | `make` / `make all` | 构建 GUI + CLI | `build/gui/`、`build/cli/` |
 | `make gui` | 仅构建 GUI（WinForms，`WinExe`） | `build/gui/` |
 | `make cli` | 仅构建 CLI（`Console Exe`） | `build/cli/` |
+| `make publish` | 发布全部 4 种变体 | `build/publish/{gui-sc,cli-sc,gui-fxdep,cli-fxdep}/` |
+| `make publish-package-fxdep` | 把两个 fxdep 目录打成 `BattleNetSwitcher-fxdep.zip` | `build/publish/BattleNetSwitcher-fxdep.zip` |
 | `make clean` | 清理 `build/` 与各项目的 `obj/`、`bin/` | — |
 | `make help` | 打印所有目标与可覆盖变量 | — |
 
 ### 可覆盖变量
-
-所有变量都可以在命令行覆盖，无需改 Makefile：
 
 ```bash
 make gui CONFIG=Debug              # 调试版
@@ -296,19 +330,23 @@ make DOTNET=/path/to/dotnet cli    # 指定 dotnet 可执行文件
 |---|---|---|
 | `CONFIG` | `Release` | 构建配置（`Debug` / `Release`） |
 | `RID` | `win-x64` | 目标运行时标识（`win-x64` / `win-arm64` 等） |
-| `DOTNET` | `dotnet` | dotnet CLI 路径，可指向特定 SDK 版本 |
+| `DOTNET` | `dotnet` | dotnet CLI 路径 |
 
 ### 构建产物
 
 ```text
 build/
-├── gui/           ← BattleNetSwitcher.exe 及依赖（运行时、Core.dll 等）
-└── cli/           ← BattleNetSwitcher.Cli.exe 及依赖
+├── gui/                    ← make（开发产物）
+├── cli/                    ← make（开发产物）
+└── publish/                ← make publish（发布产物，与 CI 一致）
+    ├── gui-sc/             BattleNetSwitcher.exe（单文件自包含）
+    ├── cli-sc/             BattleNetSwitcher.Cli.exe（单文件自包含）
+    ├── gui-fxdep/          exe + dll（依赖运行时）
+    ├── cli-fxdep/          exe + dll（依赖运行时）
+    └── BattleNetSwitcher-fxdep.zip   ← make publish-package-fxdep 生成
 ```
 
-`build/` 已被 `.gitignore` 忽略，每次 `make` 会覆盖对应子目录（`gui` 与 `cli` 互不影响）。
-如果你在 Windows 上装的是 `mingw32-make.exe` 而非 `make.exe`，把命令中的 `make` 替换即可；
-也可以在根目录放一个 `build.bat` 做转发，双击即可使用。
+`build/` 已被 `.gitignore` 忽略。
 
 ### 不使用 Makefile 时（纯 dotnet 命令）
 
@@ -322,32 +360,17 @@ dotnet build BattleNetSwitcher.Cli/BattleNetSwitcher.Cli.csproj \
   -c Release -r win-x64 -o build/cli
 ```
 
-### 发布单文件（分发给最终用户）
-
-```bash
-# GUI
-dotnet publish BattleNetSwitcher/BattleNetSwitcher.csproj \
-  -c Release -r win-x64 --self-contained true \
-  -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true \
-  -o build/publish/gui
-
-# CLI
-dotnet publish BattleNetSwitcher.Cli/BattleNetSwitcher.Cli.csproj \
-  -c Release -r win-x64 --self-contained true \
-  -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true \
-  -o build/publish/cli
-```
-
 > Linux / WSL 也能编译 Windows 目标，见 `Directory.Build.props` 里的 `<EnableWindowsTargeting>true</EnableWindowsTargeting>`。
 
 ## 项目结构
 
 ```text
 BattleNetSwitcher/
-├── Makefile                          构建入口（all / gui / cli / clean）
+├── Makefile                          构建入口（all / gui / cli / publish / clean）
 ├── build/                            构建产物（make 生成，已 gitignore）
-│   ├── gui/                          GUI 输出
-│   └── cli/                          CLI 输出
+│   ├── gui/                          GUI 开发产物
+│   ├── cli/                          CLI 开发产物
+│   └── publish/                      发布产物
 ├── Directory.Build.props             共享属性（版本号、仓库地址）
 ├── BattleNetSwitcher.Core/           类库
 │   ├── AccountBook.cs                本地“邮箱 ↔ 区服”映射
