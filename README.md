@@ -13,8 +13,11 @@
 - 按**区服**分组管理账号（国服 / 美服 / 欧服 / 亚服 / 台服）
 - 同一个邮箱可以在多个区服各有一条记录，**快照也按区服分别保存，互不覆盖**
 - 切换时自动关闭战网 → 修改配置 → 带 `--setregion=XX` 重启战网
+- **战网客户端始终以普通用户权限启动**：即便工具本身因“一键拔线”以管理员运行，
+  也会通过复制同会话 `explorer.exe` 的令牌再 `CreateProcessWithTokenW` 创建子进程，
+  让 `Battle.net.exe` 不继承管理员权限（详见[注意事项](#注意事项)）
 - 修改前自动备份 `Battle.net.config` 到 `.backup`
-- 本地维护"邮箱 ↔ 区服"映射（`%APPDATA%\BattleNetSwitcher\accounts.json`），不污染战网配置
+- 本地维护“邮箱 ↔ 区服”映射（`%APPDATA%\BattleNetSwitcher\accounts.json`），不污染战网配置
 - 支持**便携版 / 绿色版战网**：手动指定战网程序与配置文件路径
 - **关闭战网时让它正常退出**（发退出请求，超时才强杀），
   给它机会把状态与刷新后的令牌好好写盘，而不是被硬杀掉
@@ -29,7 +32,7 @@
 - **自动更新**：每次切换账号时（A→B），工具在关闭战网后**自动为 A 更新快照**
   （因为刚下线的瞬间，A 的凭证是最新的），再恢复 B 的快照，然后启动
 - **按 (邮箱, 区服) 隔离**：同一邮箱在国服和美服各有独立快照，
-  从 A 国服切到 A 美服，会走完整的"更新 A 国服 + 恢复 A 美服"链路，不会串
+  从 A 国服切到 A 美服，会走完整的“更新 A 国服 + 恢复 A 美服”链路，不会串
 - **递归备份注册表**：`UnifiedAuth\<8位十六进制ID>` 下所有值类型
   （`REG_SZ` / `REG_DWORD` / `REG_QWORD` / `REG_MULTI_SZ` / `REG_BINARY`）都能原样导出与恢复
 - **保护关键键**：整个流程**从不触碰** `EncryptionKey` 和 `CacheDatabase`，
@@ -41,6 +44,7 @@
 - 默认 3 秒后自动恢复，时长可调（1 ~ 3600 秒）
 - 基于 Windows 防火墙出站规则，无需额外驱动
 - **可禁用**：不需要该功能时关闭后，GUI 启动不再请求管理员权限
+- 该功能需要的管理员权限**仅用于修改防火墙规则**，不会通过战网客户端传导到子进程
 
 ## 下载
 
@@ -49,7 +53,7 @@
 | `BattleNetSwitcher.exe` | 图形界面，自带 .NET 运行时，双击即用 |
 | `BattleNetSwitcher.Cli.exe` | 命令行工具，自带 .NET 运行时 |
 
-启用"一键拔线"时需要**管理员权限**（修改防火墙规则必需）；禁用后不需要。
+启用“一键拔线”时需要**管理员权限**（修改防火墙规则必需）；禁用后不需要。
 
 ## 在线体验
 
@@ -67,41 +71,41 @@
 
 ### 账号切换页
 
-- 顶部选好区服，列表里双击账号或点"切换"即可
-- 点"添加账号"补录新账号，两种用法：
-  - **邮箱填好** → 直接添加（该邮箱必须已在战网客户端勾选"记住密码"）
-  - **邮箱留空** → 点"启动战网并等待登录"：工具会以所选区服打开战网，
-    你在客户端里登录新号（记得勾"记住密码"），登录成功后邮箱会自动回填
-- 点**"更新当前快照"**：以战网客户端当前真正登录的账号 + 区服为准，
+- 顶部选好区服，列表里双击账号或点“切换”即可
+- 点“添加账号”补录新账号，两种用法：
+  - **邮箱填好** → 直接添加（该邮箱必须已在战网客户端勾选“记住密码”）
+  - **邮箱留空** → 点“启动战网并等待登录”：工具会以所选区服打开战网，
+    你在客户端里登录新号（记得勾“记住密码”），登录成功后邮箱会自动回填
+- 点**“更新当前快照”**：以战网客户端当前真正登录的账号 + 区服为准，
   保存/刷新一份本地状态快照（会先关战网）
 - 点每行末尾 `×` 从本地记录移除（只删本地记录，不动战网账号；该邮箱所有区服的快照也会一并删除）
 
 ### 一键拔线页（默认启用）
 
-- 点"浏览…"从磁盘选 exe，或"选择…"从运行中的进程里挑
+- 点“浏览…”从磁盘选 exe，或“选择…”从运行中的进程里挑
 - 进程选择窗口支持**按进程名或路径搜索**，回车/双击直接确定
-- 勾选是否同时静音，设置秒数，点"一键拔线"
+- 勾选是否同时静音，设置秒数，点“一键拔线”
 
-### 关于"启动战网并等待登录"
+### 关于“启动战网并等待登录”
 
-战网客户端**不对外提供任何"登录完成"通知**（无 API、无 IPC 通道），所以这个功能靠
+战网客户端**不对外提供任何“登录完成”通知**（无 API、无 IPC 通道），所以这个功能靠
 **轮询** `Battle.net.config` 的 `SavedAccountNames` 实现：
 
-1. 点按钮时先记下"当前已记住的账号"作为基线，再以所选区服启动战网
+1. 点按钮时先记下“当前已记住的账号”作为基线，再以所选区服启动战网
 2. 后台每 800ms 读一次配置，出现基线里没有的邮箱即判定登录成功，回填到邮箱框
-3. 超时 3 分钟；期间也可点"刷新检测"手动补一次
+3. 超时 3 分钟；期间也可点“刷新检测”手动补一次
 
 实测：**登录成功后约 2 秒配置就被写入**，不需要等用户关闭客户端。
-前提是登录时勾了"记住密码"——不勾则这个邮箱永远不会写进配置，工具也无从读取。
+前提是登录时勾了“记住密码”——不勾则这个邮箱永远不会写进配置，工具也无从读取。
 
 ### 设置（菜单栏 → 设置 → 首选项…）
 
 - **战网程序路径**：便携版/绿色版战网可手动指定 `Battle.net.exe` 完整路径
 - **配置文件路径**：自定义 `Battle.net.config` 位置（留空用默认 `%APPDATA%\Battle.net\Battle.net.config`）
-- **切换账号时优先恢复本地快照**：默认开启。关闭后切换退化为"只改配置+重启"
+- **切换账号时优先恢复本地快照**：默认开启。关闭后切换退化为“只改配置+重启”
 - **保存快照前自动关闭战网客户端**：默认开启。建议保持开启，避免半写状态
 - **快照根目录**：留空 = `%APPDATA%\BattleNetSwitcher\Snapshots\`
-- **禁用"一键拔线"功能**：勾选后 GUI 启动不再请求管理员权限，只保留账号切换
+- **禁用“一键拔线”功能**：勾选后 GUI 启动不再请求管理员权限，只保留账号切换
 
 修改后需重启程序生效。
 
@@ -109,7 +113,7 @@
 
 ## CLI 用法
 
-```
+```text
 BattleNetSwitcher.Cli list [--region <区服>]                列出所有（或指定区服的）账号
 BattleNetSwitcher.Cli regions                               列出所有有账号的区服
 BattleNetSwitcher.Cli switch <邮箱> [--region <区服>]       切换账号
@@ -154,20 +158,20 @@ bns snapshot restore a@b.com -r US    # 恢复（需先手动关闭战网）
 
 战网的登录凭证是 **Windows DPAPI 加密的 blob**，存放在：
 
-```
+```text
 HKCU\Software\Blizzard Entertainment\Battle.net\UnifiedAuth\<8位十六进制ID>
 ```
 
 - 客户端启动时读取、解密，拿去服务端续期；成功就免密进入，失败就弹浏览器
-- 客户端会**主动清理"不活跃"的旧凭证**——离开某账号越久，它的 `UnifiedAuth` 条目越可能被删
+- 客户端会**主动清理“不活跃”的旧凭证**——离开某账号越久，它的 `UnifiedAuth` 条目越可能被删
 - 被删后切回去就只能走网页验证 → 频繁弹验证码
 
-**快照就是"在凭证还新鲜时备份一份"**，切换时写回去，让客户端读到"已验证过"的本地状态，
+**快照就是“在凭证还新鲜时备份一份”**，切换时写回去，让客户端读到“已验证过”的本地状态，
 直接向服务端续期，浏览器全程不参与。
 
 ### 快照里有什么
 
-```
+```text
 %APPDATA%\BattleNetSwitcher\Snapshots\<邮箱安全化>__<区服>\
 ├── manifest.json      元数据：邮箱、区服、文件清单（含 SHA256）、UnifiedAuth ID 列表
 ├── registry.json      UnifiedAuth 子树的完整导出（递归，含所有值类型）
@@ -177,7 +181,7 @@ HKCU\Software\Blizzard Entertainment\Battle.net\UnifiedAuth\<8位十六进制ID>
 
 **目录名示例**：
 
-```
+```text
 Snapshots\
 ├── user_example.com__CN\         ← user@example.com 在国服的快照
 ├── user_example.com__US\         ← user_example.com 在美服的快照
@@ -187,14 +191,14 @@ Snapshots\
 ### 使用流程
 
 1. **首次登录某账号**：手动在战网客户端里登录（该弹验证码就弹，无法避免）
-2. **保存快照**：在工具里点"更新当前快照"，工具会：
+2. **保存快照**：在工具里点“更新当前快照”，工具会：
    - 优雅关闭战网（让客户端把最新状态写盘）
    - 复制关键文件到快照目录
    - 递归导出 `UnifiedAuth` 到 `registry.json`
 3. **正常使用账号**：随便玩，玩完关客户端
-4. **切换时自动更新**：点"切换"到别的账号时：
+4. **切换时自动更新**：点“切换”到别的账号时：
    - 关闭战网
-   - **自动为"刚下线的那个账号"更新快照**（此时它的凭证是服务端刚确认过的）
+   - **自动为“刚下线的那个账号”更新快照**（此时它的凭证是服务端刚确认过的）
    - 恢复目标账号的对应区服快照
    - 以 `--setregion=XX` 启动
 5. **启动后应免验证直连**：若仍弹浏览器 → 该快照的令牌已被服务端作废，需要重新登录并刷新快照
@@ -243,60 +247,125 @@ Snapshots\
 
 - Windows 10 / 11（x64）
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- **GNU Make（推荐，可选）**：
+  - Git for Windows（安装时勾选 “Unix tools” 会附带 `make.exe`）
+  - MSYS2 / mingw-w64（命令名为 `mingw32-make.exe`）
+  - 或 `choco install make` / `scoop install make`
 
-## 编译
+> Windows 自带的 `nmake` 语法不兼容 GNU Make，**不能用**；请使用 GNU make，
+> 若命令名是 `mingw32-make.exe`，把下面命令里的 `make` 替换成 `mingw32-make` 即可。
+
+## 构建
+
+仓库根目录提供统一的 `Makefile` 作为构建入口，所有产物集中输出到顶层 `build/` 目录，不再散落在各项目的 `bin/` 下。
+
+### 克隆与构建
 
 ```bash
 git clone https://github.com/DefeatMan/BattleNetSwitcher.git
 cd BattleNetSwitcher
 
-# GUI
-dotnet build BattleNetSwitcher/BattleNetSwitcher.csproj -c Release
-
-# CLI
-dotnet build BattleNetSwitcher.Cli/BattleNetSwitcher.Cli.csproj -c Release
+make               # = make all，构建 GUI + CLI
+make gui           # 仅构建 GUI (WinForms)
+make cli           # 仅构建 CLI
+make clean         # 清理 build/ 与各项目的 obj/bin
+make help          # 显示所有目标与可用变量
 ```
 
-或直接发布单文件：
+### 构建目标一览
+
+| 目标 | 说明 | 产物目录 |
+|---|---|---|
+| `make` / `make all` | 构建 GUI + CLI | `build/gui/`、`build/cli/` |
+| `make gui` | 仅构建 GUI（WinForms，`WinExe`） | `build/gui/` |
+| `make cli` | 仅构建 CLI（`Console Exe`） | `build/cli/` |
+| `make clean` | 清理 `build/` 与各项目的 `obj/`、`bin/` | — |
+| `make help` | 打印所有目标与可覆盖变量 | — |
+
+### 可覆盖变量
+
+所有变量都可以在命令行覆盖，无需改 Makefile：
+
+```bash
+make gui CONFIG=Debug              # 调试版
+make all RID=win-arm64             # 目标平台改为 ARM64
+make DOTNET=/path/to/dotnet cli    # 指定 dotnet 可执行文件
+```
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `CONFIG` | `Release` | 构建配置（`Debug` / `Release`） |
+| `RID` | `win-x64` | 目标运行时标识（`win-x64` / `win-arm64` 等） |
+| `DOTNET` | `dotnet` | dotnet CLI 路径，可指向特定 SDK 版本 |
+
+### 构建产物
+
+```text
+build/
+├── gui/           ← BattleNetSwitcher.exe 及依赖（运行时、Core.dll 等）
+└── cli/           ← BattleNetSwitcher.Cli.exe 及依赖
+```
+
+`build/` 已被 `.gitignore` 忽略，每次 `make` 会覆盖对应子目录（`gui` 与 `cli` 互不影响）。
+如果你在 Windows 上装的是 `mingw32-make.exe` 而非 `make.exe`，把命令中的 `make` 替换即可；
+也可以在根目录放一个 `build.bat` 做转发，双击即可使用。
+
+### 不使用 Makefile 时（纯 dotnet 命令）
+
+```bash
+# GUI
+dotnet build BattleNetSwitcher/BattleNetSwitcher.csproj \
+  -c Release -r win-x64 -o build/gui
+
+# CLI
+dotnet build BattleNetSwitcher.Cli/BattleNetSwitcher.Cli.csproj \
+  -c Release -r win-x64 -o build/cli
+```
+
+### 发布单文件（分发给最终用户）
 
 ```bash
 # GUI
 dotnet publish BattleNetSwitcher/BattleNetSwitcher.csproj \
   -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true \
-  -o bin/Release/publish/gui
+  -o build/publish/gui
 
 # CLI
 dotnet publish BattleNetSwitcher.Cli/BattleNetSwitcher.Cli.csproj \
   -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true \
-  -o bin/Release/publish/cli
+  -o build/publish/cli
 ```
 
 > Linux / WSL 也能编译 Windows 目标，见 `Directory.Build.props` 里的 `<EnableWindowsTargeting>true</EnableWindowsTargeting>`。
 
 ## 项目结构
 
-```
+```text
 BattleNetSwitcher/
-├── Directory.Build.props              共享属性（版本号、仓库地址）
-├── BattleNetSwitcher.Core/            类库
-│   ├── AccountBook.cs                 本地"邮箱 ↔ 区服"映射
-│   ├── AccountSwitcher.cs             战网配置读写、账号切换、快照调度
-│   ├── AppInfo.cs                     版本号与仓库地址
-│   ├── AppSettings.cs                 全局设置（战网路径、快照开关）
-│   ├── SnapshotManager.cs             本地状态快照：保存 / 恢复 / 枚举 / 迁移
-│   ├── Snapshots/                     快照基础设施
-│   │   ├── SafeName.cs                邮箱 → 安全目录名
-│   │   ├── SnapshotPaths.cs           快照路径计算（<safeEmail>__<REGION>）
-│   │   ├── SnapshotInfo.cs            快照运行时视图
-│   │   ├── SnapshotManifest.cs        manifest.json DTO
-│   │   ├── RegistrySnapshot.cs        registry.json DTO
-│   │   └── RegistrySnapshotIO.cs      注册表递归导出/恢复（保护关键键）
-│   ├── AudioSessionController.cs      WASAPI 会话静音
-│   ├── CoreAudioInterop.cs            Core Audio COM 定义
-│   └── FirewallManager.cs             netsh advfirewall 封装
-├── BattleNetSwitcher/                 GUI（WinExe）
+├── Makefile                          构建入口（all / gui / cli / clean）
+├── build/                            构建产物（make 生成，已 gitignore）
+│   ├── gui/                          GUI 输出
+│   └── cli/                          CLI 输出
+├── Directory.Build.props             共享属性（版本号、仓库地址）
+├── BattleNetSwitcher.Core/           类库
+│   ├── AccountBook.cs                本地“邮箱 ↔ 区服”映射
+│   ├── AccountSwitcher.cs            战网配置读写、账号切换、快照调度、降权启动战网
+│   ├── AppInfo.cs                    版本号与仓库地址
+│   ├── AppSettings.cs                全局设置（战网路径、快照开关）
+│   ├── SnapshotManager.cs            本地状态快照：保存 / 恢复 / 枚举 / 迁移
+│   ├── Snapshots/                    快照基础设施
+│   │   ├── SafeName.cs               邮箱 → 安全目录名
+│   │   ├── SnapshotPaths.cs          快照路径计算（<safeEmail>__<REGION>）
+│   │   ├── SnapshotInfo.cs           快照运行时视图
+│   │   ├── SnapshotManifest.cs       manifest.json DTO
+│   │   ├── RegistrySnapshot.cs       registry.json DTO
+│   │   └── RegistrySnapshotIO.cs     注册表递归导出/恢复（保护关键键）
+│   ├── AudioSessionController.cs     WASAPI 会话静音
+│   ├── CoreAudioInterop.cs           Core Audio COM 定义
+│   └── FirewallManager.cs            netsh advfirewall 封装
+├── BattleNetSwitcher/                GUI（WinExe）
 │   ├── Program.cs
 │   ├── app.manifest
 │   ├── app.ico
@@ -308,13 +377,13 @@ BattleNetSwitcher/
 │       ├── NetworkPanel.cs
 │       ├── ProcessPickerDialog.cs
 │       └── SettingsPanel.cs
-├── BattleNetSwitcher.Cli/             CLI（Console Exe）
+├── BattleNetSwitcher.Cli/            CLI（Console Exe）
 │   ├── Program.cs
 │   └── app.manifest
-└── Website/                           官网 + 在线模拟器（纯静态，Pages 托管）
-    ├── index.html                     首页
-    ├── gui.html                        UI 模拟（左侧战网客户端 + 右侧工具窗口）
-    └── assets/                        样式与模拟内核
+└── Website/                          官网 + 在线模拟器（纯静态，Pages 托管）
+    ├── index.html                    首页
+    ├── gui.html                      UI 模拟（左侧战网客户端 + 右侧工具窗口）
+    └── assets/                       样式与模拟内核
 ```
 
 ## 本地文件位置
@@ -334,7 +403,7 @@ BattleNetSwitcher/
 
 **登录凭证不在 `Battle.net.config` 里** —— 那个文件只有邮箱列表和设置：
 
-```
+```text
 Battle.net.config\Client\
 ├── SavedAccountNames   "a@x.com,b@y.com"   ← 邮箱列表，首位 = 当前自动登录账号
 ├── AutoLogin            true
@@ -358,17 +427,17 @@ Battle.net.config\Client\
 1. 登录时客户端走 OAuth，从服务端拿到一对令牌：**会话令牌（短命）** 与 **刷新令牌（长命）**
 2. 客户端用 DPAPI 加密后写入上面的注册表位置，并把登录时间记进 `ACCOUNT_TS`
 3. 每次启动时读取、解密，拿去服务端续期：成功就免密进入，失败就弹登录框
-4. **关键：续期是服务端在计时，客户端只负责"到点去换"，而它只在运行期间去换**
+4. **关键：续期是服务端在计时，客户端只负责“到点去换”，而它只在运行期间去换**
 
 ### 本工具是怎么应对的
 
-因为"离开客户端越久越可能需要重新登录"是**服务端行为**，本地改不了。
+因为“离开客户端越久越可能需要重新登录”是**服务端行为**，本地改不了。
 工具只做两件在本地有效的事：
 
 1. **让战网正常退出**：发退出请求（`CloseMainWindow`）并等它自行收尾，超时才强杀 ——
    给它机会把状态与刷新后的令牌好好写盘
 2. **在凭证还新鲜时存一份快照**：切 A→B 时先为 A 更新快照、再恢复 B 的快照，
-   让 B 起客户端时能读到"已验证过"的本地状态
+   让 B 起客户端时能读到“已验证过”的本地状态
 
 因此：
 
@@ -380,11 +449,15 @@ Battle.net.config\Client\
 
 - **国服**：目前登录需经网页跳转，属运营方（网易）的服务端策略，本地无法绕过
 - **跨区服**：不同区服的登录状态相互独立，切换区服本身就是换一个会话
-- 若客户端频繁要求重新登录，先确认登录时**勾选了"记住密码"**，否则凭证不会被写入
+- 若客户端频繁要求重新登录，先确认登录时**勾选了“记住密码”**，否则凭证不会被写入
 
 ## 注意事项
 
-- **管理员权限**：启用"一键拔线"时 GUI 启动会弹 UAC。禁用后不再需要
+- **管理员权限**：启用“一键拔线”时 GUI 启动会弹 UAC；禁用后不再需要。
+  **即使 GUI 已提权，工具启动的战网客户端仍会以普通用户权限运行**——
+  通过复制同会话 `explorer.exe` 的令牌再 `CreateProcessWithTokenW` 创建子进程，
+  避免管理员权限随父进程“传染”给战网，从而规避 Steam/WGC/游戏覆盖层等
+  在管理员上下文中表现异常的兼容性问题。
 - **杀毒软件**：`netsh advfirewall` 命令可能被拦截，如遇失败请添加信任
 - **跨区服需要加速器**：连接美服/欧服/亚服通常需要游戏加速器
 - **账号独立**：不同区服的账号数据不互通，需分别拥有对应区服的账号
@@ -394,4 +467,4 @@ Battle.net.config\Client\
 
 [MIT License](LICENSE)
 
-> 本项目与 Blizzard Entertainment 无任何关联。"Battle.net""战网"是其商标或注册商标。
+> 本项目与 Blizzard Entertainment 无任何关联。“Battle.net”“战网”是其商标或注册商标。

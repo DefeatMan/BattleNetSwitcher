@@ -1,10 +1,13 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -431,19 +434,14 @@ namespace BattleNetSwitcher.Core
             }
 
             string args = $"--setregion={regionInfo.Code} --setlanguage={regionInfo.DefaultLocale}";
+            string workDir = Path.GetDirectoryName(exe) ?? "";
 
             try
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = exe,
-                    Arguments = args,
-                    UseShellExecute = true,
-                    WorkingDirectory = Path.GetDirectoryName(exe) ?? ""
-                };
-
-                Process.Start(psi);
-                L($"已以 [{regionInfo.DisplayName}] 启动战网客户端。");
+                // 关键：即便本进程被 UAC 提权，也通过复制 explorer 的 token
+                // 让 Battle.net.exe 以普通用户权限运行。
+                StartAsNormalUser(exe, args, workDir, L);
+                L($"已以 [{regionInfo.DisplayName}] 启动战网客户端（普通用户权限）。");
                 L($"  路径: {exe}");
                 L($"  参数: {args}");
                 L("请在客户端里登录该区服的账号（记得勾选“记住密码”）。");
@@ -462,17 +460,11 @@ namespace BattleNetSwitcher.Core
             try
             {
                 string args = $"--setregion={region.Code} --setlanguage={region.DefaultLocale}";
+                string workDir = Path.GetDirectoryName(exePath) ?? "";
 
-                var psi = new ProcessStartInfo
-                {
-                    FileName = exePath,
-                    Arguments = args,
-                    UseShellExecute = true,
-                    WorkingDirectory = Path.GetDirectoryName(exePath) ?? ""
-                };
+                StartAsNormalUser(exePath, args, workDir, log);
 
-                Process.Start(psi);
-                log($"已以 [{region.DisplayName}] 重新启动战网客户端。");
+                log($"已以 [{region.DisplayName}] 重新启动战网客户端（普通用户权限）。");
                 log($"  路径: {exePath}");
                 log($"  参数: {args}");
             }
@@ -670,5 +662,226 @@ namespace BattleNetSwitcher.Core
 
             return null;
         }
+
+        // ============================================================
+        //  普通权限启动（Copy Explorer Token 方案）
+        //
+        //  背景：switcher 因“拔线”等操作需要管理员权限，但子进程
+        //  默认继承管理员令牌，会让 Battle.net 也以管理员运行。
+        //  Windows 没有“降权启动”的现成 API，这里复制同会话
+        //  explorer.exe 的 Primary Token（它本身是普通用户令牌），
+        //  再调用 CreateProcessWithTokenW 创建子进程即可。
+        // ============================================================
+        #region 普通权限启动
+
+        private const uint PROCESS_QUERY_INFORMATION = 0x0400;
+        private const uint TOKEN_ASSIGN_PRIMARY       = 0x0001;
+        private const uint TOKEN_DUPLICATE            = 0x0002;
+        private const uint TOKEN_QUERY                = 0x0008;
+        private const uint MAXIMUM_ALLOWED            = 0x02000000;
+        private const int  SecurityImpersonation      = 2;
+        private const int  TokenPrimary               = 1;
+        private const uint LOGON_WITH_PROFILE         = 0x00000001;
+        private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct STARTUPINFO
+        {
+            public int cb;
+            public string? lpReserved;
+            public string? lpDesktop;
+            public string? lpTitle;
+            public int dwX;
+            public int dwY;
+            public int dwXSize;
+            public int dwYSize;
+            public int dwXCountChars;
+            public int dwYCountChars;
+            public int dwFillAttribute;
+            public int dwFlags;
+            public short wShowWindow;
+            public short cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput;
+            public IntPtr hStdOutput;
+            public IntPtr hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public int dwProcessId;
+            public int dwThreadId;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool DuplicateTokenEx(
+            IntPtr hExistingToken,
+            uint dwDesiredAccess,
+            IntPtr lpTokenAttributes,
+            int ImpersonationLevel,
+            int TokenType,
+            out IntPtr phNewToken);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool CreateProcessWithTokenW(
+            IntPtr hToken,
+            uint dwLogonFlags,
+            string? lpApplicationName,
+            StringBuilder lpCommandLine,
+            uint dwCreationFlags,
+            IntPtr lpEnvironment,
+            string? lpCurrentDirectory,
+            ref STARTUPINFO lpStartupInfo,
+            out PROCESS_INFORMATION lpProcessInformation);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        /// <summary>当前进程是否处于管理员提权状态（UAC elevated）。</summary>
+        public static bool IsProcessElevated()
+        {
+            try
+            {
+                using var id = WindowsIdentity.GetCurrent();
+                return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// 以普通用户权限启动指定程序（不创建任何临时文件）。
+        /// - 若本进程未提权，直接 Process.Start；
+        /// - 若已提权，复制同会话 explorer.exe 的 Primary Token 并
+        ///   CreateProcessWithTokenW 创建子进程。
+        /// 失败时会尝试回退到直接启动（会继承管理员权限）；回退也失败则抛异常。
+        /// </summary>
+        private static void StartAsNormalUser(
+            string exePath, string arguments, string workingDir, Action<string> log)
+        {
+            if (string.IsNullOrWhiteSpace(exePath))
+                throw new ArgumentException("可执行文件路径不能为空。", nameof(exePath));
+
+            // 未提权：本来就是普通权限，直接起。
+            if (!IsProcessElevated())
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    Arguments = arguments,
+                    UseShellExecute = true,
+                    WorkingDirectory = workingDir
+                });
+                log($"[权限] 当前进程未提权，直接启动。");
+                return;
+            }
+
+            try
+            {
+                // 1) 找当前会话的 explorer.exe（始终以登录用户普通 token 运行）
+                int sessionId = Process.GetCurrentProcess().SessionId;
+                int explorerPid = -1;
+                foreach (var p in Process.GetProcessesByName("explorer"))
+                {
+                    try
+                    {
+                        if (p.SessionId == sessionId)
+                        {
+                            explorerPid = p.Id;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (explorerPid < 0)
+                    throw new InvalidOperationException(
+                        "未找到当前会话的 explorer.exe，无法降权启动。");
+
+                // 2) 打开 explorer 进程句柄 → 令牌句柄
+                IntPtr hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, false, explorerPid);
+                if (hProcess == IntPtr.Zero)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenProcess 失败");
+
+                IntPtr hToken = IntPtr.Zero;
+                IntPtr hDupToken = IntPtr.Zero;
+                PROCESS_INFORMATION pi = default;
+
+                try
+                {
+                    if (!OpenProcessToken(hProcess,
+                            TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ASSIGN_PRIMARY, out hToken))
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenProcessToken 失败");
+
+                    // 3) 复制为 Primary Token
+                    if (!DuplicateTokenEx(hToken, MAXIMUM_ALLOWED, IntPtr.Zero,
+                            SecurityImpersonation, TokenPrimary, out hDupToken))
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "DuplicateTokenEx 失败");
+
+                    var si = new STARTUPINFO
+                    {
+                        cb = Marshal.SizeOf(typeof(STARTUPINFO)),
+                        lpDesktop = "winsta0\\default"   // 保证窗口显示在用户桌面
+                    };
+
+                    // lpApplicationName 与 lpCommandLine 同时提供，
+                    // 命令行包含程序名 + 参数。
+                    var cmd = new StringBuilder();
+                    cmd.Append('"').Append(exePath).Append('"');
+                    if (!string.IsNullOrWhiteSpace(arguments))
+                        cmd.Append(' ').Append(arguments);
+
+                    // 4) 用复制出来的 token 创建进程
+                    if (!CreateProcessWithTokenW(
+                            hDupToken,
+                            LOGON_WITH_PROFILE,
+                            exePath,
+                            cmd,
+                            CREATE_UNICODE_ENVIRONMENT,
+                            IntPtr.Zero,
+                            workingDir,
+                            ref si,
+                            out pi))
+                    {
+                        throw new Win32Exception(
+                            Marshal.GetLastWin32Error(), "CreateProcessWithTokenW 失败");
+                    }
+
+                    log($"[权限] 已复制 explorer(pid={explorerPid}) 的令牌，以普通用户权限启动。");
+                }
+                finally
+                {
+                    if (pi.hProcess != IntPtr.Zero) CloseHandle(pi.hProcess);
+                    if (pi.hThread != IntPtr.Zero) CloseHandle(pi.hThread);
+                    if (hDupToken != IntPtr.Zero) CloseHandle(hDupToken);
+                    if (hToken != IntPtr.Zero) CloseHandle(hToken);
+                    if (hProcess != IntPtr.Zero) CloseHandle(hProcess);
+                }
+            }
+            catch (Exception ex)
+            {
+                log($"[权限] 降权启动失败，回退到直接启动（会继承管理员权限）：{ex.Message}");
+
+                // 回退：直接启动。如果这步也失败，异常会自然往上抛，
+                // 调用方 LaunchForRegion 的 catch 会提示“启动战网失败”。
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    Arguments = arguments,
+                    UseShellExecute = true,
+                    WorkingDirectory = workingDir
+                });
+            }
+        }
+
+        #endregion
     }
 }
