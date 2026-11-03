@@ -34,7 +34,8 @@ DOTNET_FLAGS := -c $(CONFIG) -r $(RID)
 
 # 自包含单文件参数（gui-sc / cli-sc 共用）
 PUBLISH_SC_FLAGS := --self-contained true \
-                    -p:PublishSingleFile=true
+                    -p:PublishSingleFile=true \
+                    -p:EnableCompressionInSingleFile=true
 
 .DEFAULT_GOAL := all
 
